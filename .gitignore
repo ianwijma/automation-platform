@@ -1,0 +1,10 @@
+node_modules/
+dist/
+ui/dist/
+ui/node_modules/
+*.db
+*.db-wal
+*.db-shm
+.data/
+.env
+ap
