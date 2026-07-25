@@ -71,6 +71,14 @@ export class AgentDispatcher implements ExecutionDependencies {
     this.nodeExecutions.push(record);
   }
 
+  getRun(runId: string): RunRecord | undefined {
+    return this.runs.find((r) => r.id === runId);
+  }
+
+  getAllRuns(): RunRecord[] {
+    return [...this.runs];
+  }
+
   updateNodeExecution(id: string, updates: Partial<NodeExecutionRecord>): void {
     const idx = this.nodeExecutions.findIndex((r) => r.id === id);
     if (idx >= 0) {

@@ -2,6 +2,9 @@ import { resolve, extname, join, relative } from "node:path";
 import { statSync, readFileSync, existsSync } from "node:fs";
 import type { AppConfig } from "../cli/config.js";
 import type { SystemInfoResponse } from "../core/api-types.js";
+import type { AppDatabase } from "../db/database.js";
+import { AgentDispatcher } from "../agent/dispatcher.js";
+import { handleApiRoute } from "./routes.js";
 
 const MIME_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -80,10 +83,11 @@ interface ServerResult {
 export function createServer(options: {
   port: number;
   host: string;
-  db: any;
+  db: AppDatabase;
   config: AppConfig;
 }): ServerResult {
   const { port, host, db, config } = options;
+  const dispatcher = new AgentDispatcher();
 
   const server = Bun.serve({
     port,
@@ -107,6 +111,8 @@ export function createServer(options: {
       }
 
       if (pathname.startsWith("/api/")) {
+        const result = handleApiRoute(db.db, dispatcher, req);
+        if (result !== null) return result;
         return json({ error: "Not found" }, 404);
       }
 
