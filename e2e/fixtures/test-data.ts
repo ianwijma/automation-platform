@@ -68,7 +68,7 @@ export const ERROR_PIPELINE: AutomationDefinition = {
   settings: DEFAULT_SETTINGS,
   nodes: [
     node("n1", "trigger.manual", "Start", {}),
-    node("n2", "error.throw", "Fail", { message: "intentional test error" }, { position: { x: 200, y: 0 } }),
+    node("n2", "error.throw", "Fail", { message: "intentional test error" }, { position: { x: 200, y: 0 }, retry: { attempts: 1, backoffSec: [0] } }),
   ],
   edges: [edge("e1", "n1", "out", "n2", "in")],
 };
