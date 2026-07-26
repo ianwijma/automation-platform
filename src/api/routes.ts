@@ -1,5 +1,8 @@
 import type { Database } from "bun:sqlite";
 import type { AgentDispatcher } from "../agent/dispatcher.js";
+import type { FleetDispatcher } from "../agent/fleet-dispatcher.js";
+import type { WssHub } from "./wss-hub.js";
+import type { ArtifactStore } from "./artifacts.js";
 import type { RunOptions } from "../core/execution-engine.js";
 import type { AutomationDefinition } from "../core/types.js";
 import {
@@ -12,11 +15,12 @@ import {
   deactivateAutomation,
 } from "./automations.js";
 import { runAutomation, getRun, listRuns } from "./runs.js";
+import { listAgents, createJoinToken, triggerAgentUpdate, updateAgentTags } from "./agent-routes.js";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Token",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -51,6 +55,9 @@ function matchRoute(pathname: string, pattern: string): Record<string, string> |
 interface RouteContext {
   db: Database;
   dispatcher: AgentDispatcher;
+  fleetDispatcher?: FleetDispatcher;
+  hub?: WssHub;
+  artifactStore?: ArtifactStore;
 }
 
 type RouteHandler = (
@@ -182,12 +189,108 @@ const routes: Route[] = [
       return json(run);
     },
   },
+  {
+    method: "GET",
+    pattern: "/api/agents",
+    handler: (ctx) => {
+      if (!ctx.hub) {
+        return json({ error: "Fleet mode not enabled" }, 400);
+      }
+      return listAgents(ctx.db, ctx.hub);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/agents/join-tokens",
+    handler: async (ctx, req) => {
+      try {
+        const body = await req.json() as { uses?: number; ttlHours?: number };
+        return createJoinToken(ctx.db, body);
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/agents/:id/update",
+    handler: (ctx, _req, params) => {
+      if (!ctx.hub) {
+        return json({ error: "Fleet mode not enabled" }, 400);
+      }
+      return triggerAgentUpdate(ctx.hub, params.id);
+    },
+  },
+  {
+    method: "PUT",
+    pattern: "/api/agents/:id/tags",
+    handler: async (ctx, req, params) => {
+      if (!ctx.hub) {
+        return json({ error: "Fleet mode not enabled" }, 400);
+      }
+      try {
+        const body = await req.json() as { tags: string[] };
+        if (!Array.isArray(body.tags)) {
+          return json({ error: "tags must be an array" }, 400);
+        }
+        return updateAgentTags(ctx.db, ctx.hub, params.id, body.tags);
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/artifacts/:id",
+    handler: (ctx, _req, params) => {
+      if (!ctx.artifactStore) {
+        return json({ error: "Artifact storage not available" }, 400);
+      }
+      const result = ctx.artifactStore.getArtifact(params.id);
+      if (!result) return json({ error: "Artifact not found" }, 404);
+      return new Response(new Uint8Array(result.data), {
+        status: 200,
+        headers: {
+          "Content-Type": result.meta.mime,
+          "Content-Disposition": `inline; filename="${result.meta.name}"`,
+          "X-Artifact-Id": result.meta.id,
+          ...CORS_HEADERS,
+        },
+      });
+    },
+  },
+  {
+    method: "PUT",
+    pattern: "/api/artifacts/:id",
+    handler: async (ctx, req, params) => {
+      if (!ctx.artifactStore) {
+        return json({ error: "Artifact storage not available" }, 400);
+      }
+      const authHeader = req.headers.get("Authorization");
+      const agentToken = req.headers.get("X-Agent-Token");
+      if (!authHeader && !agentToken) {
+        return json({ error: "Authentication required" }, 401);
+      }
+      const contentType = req.headers.get("Content-Type") ?? "application/octet-stream";
+      const buffer = Buffer.from(await req.arrayBuffer());
+      const url = new URL(req.url);
+      const runId = url.searchParams.get("runId") ?? "unknown";
+      const ttlHours = url.searchParams.get("ttlHours")
+        ? parseInt(url.searchParams.get("ttlHours")!, 10)
+        : undefined;
+      const meta = ctx.artifactStore.storeArtifact(buffer, contentType, params.id, runId, ttlHours);
+      return json(meta, 201);
+    },
+  },
 ];
 
 export function handleApiRoute(
   db: Database,
   dispatcher: AgentDispatcher,
   req: Request,
+  fleetDispatcher?: FleetDispatcher,
+  hub?: WssHub,
+  artifactStore?: ArtifactStore,
 ): Response | Promise<Response> | null {
   const url = new URL(req.url);
   const pathname = url.pathname;
@@ -197,7 +300,7 @@ export function handleApiRoute(
     if (route.method !== method) continue;
     const params = matchRoute(pathname, route.pattern);
     if (params !== null) {
-      return route.handler({ db, dispatcher }, req, params);
+      return route.handler({ db, dispatcher, fleetDispatcher, hub, artifactStore }, req, params);
     }
   }
 

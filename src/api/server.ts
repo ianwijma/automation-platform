@@ -1,9 +1,11 @@
 import { resolve, extname, join, relative } from "node:path";
-import { statSync, readFileSync, existsSync } from "node:fs";
+import { statSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import type { AppConfig } from "../cli/config.js";
 import type { SystemInfoResponse } from "../core/api-types.js";
 import type { AppDatabase } from "../db/database.js";
-import { AgentDispatcher } from "../agent/dispatcher.js";
+import { FleetDispatcher } from "../agent/fleet-dispatcher.js";
+import { WssHub } from "./wss-hub.js";
+import { ArtifactStore } from "./artifacts.js";
 import { handleApiRoute } from "./routes.js";
 
 const MIME_TYPES: Record<string, string> = {
@@ -35,7 +37,7 @@ const MIME_TYPES: Record<string, string> = {
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Token",
   "Access-Control-Max-Age": "86400",
 };
 
@@ -75,8 +77,13 @@ function serveStaticFile(filePath: string): Response | null {
   });
 }
 
+interface WsData {
+  connectedAt: number;
+  agentId: string | null;
+}
+
 interface ServerResult {
-  server: ReturnType<typeof Bun.serve>;
+  server: ReturnType<typeof Bun.serve<WsData>>;
   close: () => void;
 }
 
@@ -87,14 +94,36 @@ export function createServer(options: {
   config: AppConfig;
 }): ServerResult {
   const { port, host, db, config } = options;
-  const dispatcher = new AgentDispatcher();
 
-  const server = Bun.serve({
+  const hub = new WssHub(db.db);
+  const fleetDispatcher = new FleetDispatcher(hub);
+  const artifactStore = new ArtifactStore(config.dataDir, db.db);
+
+  mkdirSync(config.dataDir, { recursive: true });
+
+  hub.onMessage((agentId, msg) => {
+    if (msg.type === "hello") return;
+    const conn = hub.getAgentConnection(agentId);
+    if (conn && !fleetDispatcher.getFleetAgents().find((a) => a.agentId === agentId)) {
+      fleetDispatcher.registerRemoteAgent(agentId, conn.name, conn.capabilities, conn.tags);
+    }
+  });
+
+  const server = Bun.serve<WsData>({
     port,
     hostname: host,
-    fetch(req: Request): Response | Promise<Response> {
+    fetch(req: Request, server): Response | Promise<Response> {
       const url = new URL(req.url);
       const pathname = url.pathname;
+
+      if (pathname === "/api/agent/connect" &&
+        req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        const success = server.upgrade(req, {
+          data: { connectedAt: Date.now(), agentId: null },
+        });
+        if (success) return undefined as any;
+        return json({ error: "WebSocket upgrade failed" }, 500);
+      }
 
       if (req.method === "OPTIONS") {
         return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -111,7 +140,7 @@ export function createServer(options: {
       }
 
       if (pathname.startsWith("/api/")) {
-        const result = handleApiRoute(db.db, dispatcher, req);
+        const result = handleApiRoute(db.db, fleetDispatcher, req, fleetDispatcher, hub, artifactStore);
         if (result !== null) return result;
         return json({ error: "Not found" }, 404);
       }
@@ -136,9 +165,21 @@ export function createServer(options: {
 
       return json({ error: "Not found" }, 404);
     },
+    websocket: {
+      open(ws) {
+        hub.handleOpen(ws);
+      },
+      message(ws, message) {
+        hub.handleMessage(ws, message as string | Buffer);
+      },
+      close(ws) {
+        hub.handleClose(ws);
+      },
+    },
   });
 
   const close = () => {
+    hub.close();
     server.stop();
     db.close();
   };

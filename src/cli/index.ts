@@ -1,10 +1,11 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createDatabase } from "../db/database.js";
 import { createServer } from "../api/server.js";
 import { resolveConfig, type AppConfig } from "./config.js";
 import { openBrowser } from "./utils.js";
 import { parseCliFlags } from "./flags.js";
+import { startFleetAgent } from "../agent/fleet-agent.js";
 
 function ensureDataDir(dataDir: string): void {
   mkdirSync(dataDir, { recursive: true });
@@ -54,6 +55,13 @@ function handleJoin(args: string[], flags: { token?: string }): void {
   console.log("Agent enrolled");
 }
 
+async function handleAgent(args: string[]): Promise<void> {
+  const config = resolveConfig(args, "agent");
+  ensureDataDir(config.dataDir);
+
+  await startFleetAgent(config);
+}
+
 function handleUi(args: string[]): void {
   const config = resolveConfig(args);
   const url = `http://localhost:${config.port}`;
@@ -90,6 +98,12 @@ export function parseArgs(argv: string[]): void {
       break;
     }
 
+    case "agent": {
+      const agentArgs = args.slice(1);
+      handleAgent(agentArgs);
+      break;
+    }
+
     case "ui": {
       const uiArgs = args.slice(1).filter((a) => !a.startsWith("--token"));
       handleUi(uiArgs);
@@ -115,7 +129,7 @@ export function parseArgs(argv: string[]): void {
     default: {
       console.error(`Unknown subcommand: ${subcommand}`);
       console.error(
-        "Usage: ap [serve] [--port N] [--public-url URL] [--no-browser] | ap join <url> --token <tok> | ap ui | ap doctor | ap install-service",
+        "Usage: ap [serve] [--port N] [--public-url URL] [--no-browser] | ap join <url> --token <tok> | ap agent | ap ui | ap doctor | ap install-service",
       );
       process.exit(1);
     }

@@ -3,7 +3,7 @@ import type { CapabilityReport } from "../core/node-contract.js";
 import { LocalAgent } from "./local-agent.js";
 
 export class AgentDispatcher implements ExecutionDependencies {
-  private agents = new Map<string, AgentDispatch>();
+  protected agents = new Map<string, AgentDispatch>();
   private stateMap = new Map<string, unknown>();
   private runs: RunRecord[] = [];
   private nodeExecutions: NodeExecutionRecord[] = [];

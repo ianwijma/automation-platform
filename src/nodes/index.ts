@@ -1,4 +1,7 @@
 import "./trigger-manual.js";
+import "./trigger-schedule.js";
+import "./trigger-webhook.js";
+import "./trigger-polling.js";
 import "./system-command.js";
 import "./logic-if.js";
 import "./state-get.js";
