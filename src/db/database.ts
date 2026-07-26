@@ -111,6 +111,10 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `,
   },
+  {
+    name: "002_artifacts_created_at.sql",
+    sql: `ALTER TABLE artifacts ADD COLUMN created_at TEXT DEFAULT (datetime('now'));`,
+  },
 ];
 
 const ENSURE_MIGRATIONS_TABLE = `

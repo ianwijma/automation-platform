@@ -138,6 +138,11 @@ export class WssHub {
       }
     }
 
+    const existingConn = this.connections.get(agentId);
+    if (existingConn) {
+      existingConn.ws.close(4005, "Replaced by new connection");
+    }
+
     this.connections.set(agentId, conn);
 
     const welcome: AgentServerMessage & { type: "welcome" } = {

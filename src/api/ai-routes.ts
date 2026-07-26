@@ -50,8 +50,8 @@ export async function handleAiChat(
 
     const result = await service.chat(body.messages, automation);
     return json(result);
-  } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+  } catch {
+    return json({ error: "AI service error" }, 500);
   }
 }
 
@@ -73,8 +73,8 @@ export async function handleAiApply(
     }
 
     return json({ automationId: body.automationId, definition: newDefinition });
-  } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+  } catch {
+    return json({ error: "AI service error" }, 500);
   }
 }
 
@@ -95,7 +95,7 @@ export async function handleAiModels(
     );
     const models = await service.listModels();
     return json({ models });
-  } catch (e) {
-    return json({ error: (e as Error).message }, 500);
+  } catch {
+    return json({ error: "Failed to list models" }, 500);
   }
 }

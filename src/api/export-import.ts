@@ -132,15 +132,15 @@ export function importAutomation(
       .run(versionId, automationId, 1, draftJson, now);
   })();
 
-  for (const [credKey, credValue] of Object.entries(data.credentials)) {
+  for (const [credKey, credData] of Object.entries(data.credentials)) {
     const existing = vault.getCredentialByName(credKey);
     if (!existing) {
-      vault.storeCredential(credKey, "imported", { value: credValue });
+      vault.storeCredential(credKey, credData.type, { value: credData.value });
     }
   }
 
-  for (const [envKey, envValue] of Object.entries(data.envVars)) {
-    envResolver.setVar("automation", automationId, envKey, envValue, false);
+  for (const [envKey, envData] of Object.entries(data.envVars)) {
+    envResolver.setVar("automation", automationId, envKey, envData.value, envData.isSecret);
   }
 
   return automationId;

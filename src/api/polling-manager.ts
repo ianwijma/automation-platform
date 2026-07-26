@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import type { AgentDispatcher } from "../agent/dispatcher.js";
 import type { RunOptions } from "../core/execution-engine.js";
 import type { NodeItem } from "../core/node-contract.js";
+import { createHash } from "node:crypto";
 import { getAutomation } from "./automations.js";
 import { runAutomation } from "./runs.js";
 
@@ -51,13 +52,7 @@ const defaultExecutePoll = async (targetType: string, target: string): Promise<R
 };
 
 function hashResult(result: Record<string, unknown>): string {
-  const json = JSON.stringify(result);
-  let hash = 0;
-  for (let i = 0; i < json.length; i++) {
-    const ch = json.charCodeAt(i);
-    hash = ((hash << 5) - hash + ch) | 0;
-  }
-  return hash.toString(16);
+  return createHash("sha256").update(JSON.stringify(result)).digest("hex").slice(0, 16);
 }
 
 async function pollCycle(entry: PollingEntry): Promise<void> {

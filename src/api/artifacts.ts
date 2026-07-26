@@ -20,6 +20,7 @@ interface ArtifactRecord {
   name: string;
   created_run_id: string;
   expires_at: string;
+  created_at: string;
 }
 
 export class ArtifactStore {
@@ -57,8 +58,8 @@ export class ArtifactStore {
     const now = new Date().toISOString();
 
     this.db.prepare(
-      "INSERT OR IGNORE INTO artifacts (id, size, mime, name, created_run_id, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-    ).run(sha256, data.length, mime, name, runId, expiresAt);
+      "INSERT OR REPLACE INTO artifacts (id, size, mime, name, created_run_id, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(sha256, data.length, mime, name, runId, expiresAt, now);
 
     return {
       id: sha256,
@@ -98,7 +99,7 @@ export class ArtifactStore {
       name: row.name,
       runId: row.created_run_id,
       expiresAt: row.expires_at,
-      createdAt: row.expires_at,
+      createdAt: row.created_at,
     };
   }
 

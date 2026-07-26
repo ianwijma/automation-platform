@@ -97,8 +97,8 @@ export interface ExportResponse {
 
 export interface ImportRequest {
   automation: AutomationDefinition;
-  credentials: Record<string, string>;
-  envVars: Record<string, string>;
+  credentials: Record<string, { type: string; value: string }>;
+  envVars: Record<string, { value: string; isSecret: boolean }>;
   targetRebinding?: Record<string, AutomationTarget>;
 }
 

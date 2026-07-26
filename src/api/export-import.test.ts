@@ -155,13 +155,14 @@ describe("importAutomation", () => {
     const def = makeDefinition();
     importAutomation(appDb, vault, envResolver, {
       automation: def,
-      credentials: { "imported-key": "secret-value" },
+      credentials: { "imported-key": { type: "api_key", value: "secret-value" } },
       envVars: {},
     });
 
     const cred = vault.getCredentialByName("imported-key");
     expect(cred).not.toBeNull();
     expect(cred!.values.value).toBe("secret-value");
+    expect(cred!.type).toBe("api_key");
   });
 
   test("sets env vars during import", () => {
@@ -169,7 +170,7 @@ describe("importAutomation", () => {
     const automationId = importAutomation(appDb, vault, envResolver, {
       automation: def,
       credentials: {},
-      envVars: { MY_VAR: "hello" },
+      envVars: { MY_VAR: { value: "hello", isSecret: false } },
     });
 
     const val = envResolver.getVar("automation", automationId, "MY_VAR");

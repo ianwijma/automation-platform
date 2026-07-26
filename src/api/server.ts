@@ -6,6 +6,8 @@ import type { AppDatabase } from "../db/database.js";
 import { FleetDispatcher } from "../agent/fleet-dispatcher.js";
 import { WssHub } from "./wss-hub.js";
 import { ArtifactStore } from "./artifacts.js";
+import { CredentialVault } from "../core/credential-vault.js";
+import { EnvResolver } from "../core/env-resolver.js";
 import { handleApiRoute } from "./routes.js";
 
 const MIME_TYPES: Record<string, string> = {
@@ -98,6 +100,8 @@ export function createServer(options: {
   const hub = new WssHub(db.db);
   const fleetDispatcher = new FleetDispatcher(hub);
   const artifactStore = new ArtifactStore(config.dataDir, db.db);
+  const vault = new CredentialVault(db);
+  const envResolver = new EnvResolver(db, vault);
 
   mkdirSync(config.dataDir, { recursive: true });
 
@@ -140,7 +144,7 @@ export function createServer(options: {
       }
 
       if (pathname.startsWith("/api/")) {
-        const result = handleApiRoute(db.db, fleetDispatcher, req, fleetDispatcher, hub, artifactStore);
+        const result = handleApiRoute(db.db, fleetDispatcher, req, fleetDispatcher, hub, artifactStore, db, vault, envResolver);
         if (result !== null) return result;
         return json({ error: "Not found" }, 404);
       }

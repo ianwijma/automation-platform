@@ -58,12 +58,11 @@ export function createJoinToken(
 }
 
 export function triggerAgentUpdate(hub: WssHub, agentId: string): Response {
-  const conn = hub.getAgentConnection(agentId);
-  if (!conn) {
+  const sent = hub.broadcastToAgent(agentId, { type: "self_update", url: "", sha256: "" });
+  if (!sent) {
     return Response.json({ error: "Agent not connected" }, { status: 404 });
   }
-
-  return Response.json({ message: "Update trigger not configured for this agent" }, { status: 202 });
+  return Response.json({ message: "Update triggered" }, { status: 202 });
 }
 
 export function updateAgentTags(db: Database, hub: WssHub, agentId: string, tags: string[]): Response {

@@ -22,7 +22,7 @@ export function handleGetSettings(db: Database): Response {
   const settings = getAiSettings(db);
 
   const maskedKey = settings.apiKey
-    ? settings.apiKey.slice(0, 4) + "****" + settings.apiKey.slice(-4)
+    ? (settings.apiKey.length <= 8 ? "****" : settings.apiKey.slice(0, 4) + "****" + settings.apiKey.slice(-4))
     : null;
 
   return json({

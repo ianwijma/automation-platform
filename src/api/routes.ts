@@ -24,6 +24,7 @@ import { listVersions, revertToVersion, labelVersion } from "./versions.js";
 import { handleAiChat, handleAiApply, handleAiModels } from "./ai-routes.js";
 import { handleGetSettings, handleUpdateSettings } from "./settings-routes.js";
 import { exportAutomation, importAutomation } from "./export-import.js";
+import { handleWebhookRequest } from "./webhooks.js";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -165,8 +166,13 @@ const routes: Route[] = [
     method: "POST",
     pattern: "/api/automations/:id/run",
     handler: async (ctx, req, params) => {
+      let body: Partial<RunOptions> = {};
       try {
-        const body = await req.json() as Partial<RunOptions>;
+        body = await req.json() as Partial<RunOptions>;
+      } catch {
+        // empty body is ok — all fields have defaults
+      }
+      try {
         const options: RunOptions = {
           mode: body.mode ?? "manual",
           dryRun: body.dryRun,
@@ -204,10 +210,14 @@ const routes: Route[] = [
     method: "POST",
     pattern: "/api/runs/:id/rerun-from/:nodeId",
     handler: async (ctx, _req, params) => {
-      const { rerunFromNode } = await import("./rerun.js");
-      const run = await rerunFromNode(ctx.db, ctx.dispatcher, params.id, params.nodeId);
-      if (!run) return json({ error: "Run or node not found" }, 404);
-      return json(run, 201);
+      try {
+        const { rerunFromNode } = await import("./rerun.js");
+        const run = await rerunFromNode(ctx.db, ctx.dispatcher, params.id, params.nodeId);
+        if (!run) return json({ error: "Run or node not found" }, 404);
+        return json(run, 201);
+      } catch {
+        return json({ error: "Rerun failed" }, 500);
+      }
     },
   },
   {
@@ -231,12 +241,13 @@ const routes: Route[] = [
     method: "POST",
     pattern: "/api/agents/join-tokens",
     handler: async (ctx, req) => {
+      let body: { uses?: number; ttlHours?: number } = {};
       try {
-        const body = await req.json() as { uses?: number; ttlHours?: number };
-        return createJoinToken(ctx.db, body);
+        body = await req.json() as { uses?: number; ttlHours?: number };
       } catch {
-        return json({ error: "Invalid request body" }, 400);
+        // empty body is ok — all fields have defaults
       }
+      return createJoinToken(ctx.db, body);
     },
   },
   {
@@ -276,11 +287,12 @@ const routes: Route[] = [
       }
       const result = ctx.artifactStore.getArtifact(params.id);
       if (!result) return json({ error: "Artifact not found" }, 404);
+      const safeName = result.meta.name.replace(/["\\]/g, "_");
       return new Response(new Uint8Array(result.data), {
         status: 200,
         headers: {
           "Content-Type": result.meta.mime,
-          "Content-Disposition": `inline; filename="${result.meta.name}"`,
+          "Content-Disposition": `inline; filename="${safeName}"`,
           "X-Artifact-Id": result.meta.id,
           ...CORS_HEADERS,
         },
@@ -303,9 +315,12 @@ const routes: Route[] = [
       const buffer = Buffer.from(await req.arrayBuffer());
       const url = new URL(req.url);
       const runId = url.searchParams.get("runId") ?? "unknown";
-      const ttlHours = url.searchParams.get("ttlHours")
-        ? parseInt(url.searchParams.get("ttlHours")!, 10)
-        : undefined;
+      let ttlHours: number | undefined;
+      const ttlParam = url.searchParams.get("ttlHours");
+      if (ttlParam) {
+        const parsed = parseInt(ttlParam, 10);
+        ttlHours = isNaN(parsed) ? undefined : parsed;
+      }
       const meta = ctx.artifactStore.storeArtifact(buffer, contentType, params.id, runId, ttlHours);
       return json(meta, 201);
     },
@@ -507,6 +522,20 @@ const routes: Route[] = [
     method: "GET",
     pattern: "/api/ai/models",
     handler: (ctx, req) => handleAiModels(ctx.db, req),
+  },
+  {
+    method: "POST",
+    pattern: "/hooks/test/:autoId/:path",
+    handler: async (ctx, req, params) => {
+      return handleWebhookRequest(ctx.db, ctx.dispatcher, params.autoId, params.path, req, "test");
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/hooks/:autoId/:path",
+    handler: async (ctx, req, params) => {
+      return handleWebhookRequest(ctx.db, ctx.dispatcher, params.autoId, params.path, req, "prod");
+    },
   },
   {
     method: "GET",

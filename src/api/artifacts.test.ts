@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS artifacts (
   mime TEXT NOT NULL,
   name TEXT NOT NULL,
   created_run_id TEXT REFERENCES runs(id),
-  expires_at TEXT NOT NULL
+  expires_at TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
 );
 `;
 
