@@ -2,6 +2,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { AutomationNodeData } from "../types";
 import { CATEGORY_COLORS, CATEGORY_TEXT, CATEGORY_BORDER } from "../types";
+import { getPalettePorts } from "./NodePalette";
 import { Monitor, Server, Tag, Zap, Ban } from "lucide-react";
 
 const TARGET_ICONS: Record<string, typeof Monitor> = {
@@ -38,78 +39,52 @@ function AutomationNodeComponent(props: NodeProps) {
   const borderClass = CATEGORY_BORDER[category] ?? "border-gray-500/60";
   const textClass = CATEGORY_TEXT[category] ?? "text-gray-400";
 
+  const ports = getPalettePorts(data.nodeType);
   const handles = [];
-  if (category !== "trigger") {
+
+  for (const input of ports.inputs) {
+    const totalInputs = ports.inputs.length;
+    const idx = ports.inputs.indexOf(input);
+    const topPercent = totalInputs === 1 ? 50 : (30 + (40 * idx) / (totalInputs - 1));
     handles.push(
       <Handle
-        key="in"
+        key={input.name}
         type="target"
         position={Position.Left}
-        id="in"
+        id={input.name}
+        style={{ top: `${topPercent}%` }}
         className="!h-3 !w-3 !border-2 !border-gray-700 !bg-gray-400"
       />,
     );
   }
 
-  const nodeType = data.nodeType;
-  if (nodeType === "logic.if") {
+  for (const output of ports.outputs) {
+    const totalOutputs = ports.outputs.length;
+    const idx = ports.outputs.indexOf(output);
+    const topPercent = totalOutputs === 1 ? 50 : (30 + (40 * idx) / (totalOutputs - 1));
+    const isTrue = output.name === "true";
+    const isFalse = output.name === "false";
+    const bgClass = isTrue
+      ? "!bg-green-400"
+      : isFalse
+        ? "!bg-red-400"
+        : "!bg-gray-400";
+    const label = isTrue ? "T" : isFalse ? "F" : "";
     handles.push(
       <Handle
-        key="true"
+        key={output.name}
         type="source"
         position={Position.Right}
-        id="true"
-        style={{ top: "30%" }}
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-green-400"
+        id={output.name}
+        style={{ top: `${topPercent}%` }}
+        className={`!h-3 !w-3 !border-2 !border-gray-700 ${bgClass}`}
       >
-        <span className="absolute -right-4 -top-1 text-[9px] text-green-400">T</span>
+        {label && (
+          <span className={`absolute -right-4 -top-1 text-[9px] ${isTrue ? "text-green-400" : "text-red-400"}`}>
+            {label}
+          </span>
+        )}
       </Handle>,
-      <Handle
-        key="false"
-        type="source"
-        position={Position.Right}
-        id="false"
-        style={{ top: "70%" }}
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-red-400"
-      >
-        <span className="absolute -right-4 -top-1 text-[9px] text-red-400">F</span>
-      </Handle>,
-    );
-  } else if (nodeType === "logic.merge") {
-    handles.push(
-      <Handle
-        key="in1"
-        type="target"
-        position={Position.Left}
-        id="in1"
-        style={{ top: "30%" }}
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-gray-400"
-      />,
-      <Handle
-        key="in2"
-        type="target"
-        position={Position.Left}
-        id="in2"
-        style={{ top: "70%" }}
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-gray-400"
-      />,
-      <Handle
-        key="out"
-        type="source"
-        position={Position.Right}
-        id="out"
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-gray-400"
-      />,
-    );
-  } else {
-    handles.push(
-      <Handle
-        key="out"
-        type="source"
-        position={Position.Right}
-        id="out"
-        className="!h-3 !w-3 !border-2 !border-gray-700 !bg-gray-400"
-      />,
     );
   }
 
@@ -136,7 +111,7 @@ function AutomationNodeComponent(props: NodeProps) {
           {data.name}
         </div>
         <div className="mt-0.5 text-[11px] text-gray-500">
-          {nodeType}
+          {data.nodeType}
         </div>
       </div>
 

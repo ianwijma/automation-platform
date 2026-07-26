@@ -58,6 +58,10 @@ interface AppStore {
 
   aiSettings: AiSettingsResponse | null;
 
+  settingsOpen: boolean;
+  saveError: string | null;
+  actionError: string | null;
+
   fetchSystemInfo: () => Promise<void>;
   fetchAutomations: () => Promise<void>;
   selectAutomation: (id: string | null) => Promise<void>;
@@ -105,6 +109,10 @@ interface AppStore {
   applyApprovedDiffs: () => Promise<void>;
   setShowAiPanel: (show: boolean) => void;
   setShowVersionHistory: (show: boolean) => void;
+  toggleSettings: () => void;
+
+  activateAutomation: (id: string) => Promise<void>;
+  deactivateAutomation: (id: string) => Promise<void>;
 
   fetchAiSettings: () => Promise<void>;
   updateAiSettings: (settings: {
@@ -146,6 +154,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   aiSettings: null,
 
+  settingsOpen: false,
+  saveError: null,
+  actionError: null,
+
   fetchSystemInfo: async () => {
     try {
       const info = await api.getSystemInfo();
@@ -172,6 +184,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       nodeExecutions: {},
       previewVersion: null,
       isPreviewMode: false,
+      versions: [],
     });
     if (!id) {
       set({ currentDefinition: null, rfNodes: [], rfEdges: [], isDirty: false });
@@ -188,21 +201,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   createAutomation: async (name: string) => {
-    const def = makeDefaultDefinition(name);
-    const resp = await api.createAutomation(name, def);
-    set((s) => ({ automations: [...s.automations, resp] }));
-    await get().selectAutomation(resp.id);
+    try {
+      const def = makeDefaultDefinition(name);
+      const resp = await api.createAutomation(name, def);
+      set((s) => ({ automations: [...s.automations, resp], actionError: null }));
+      await get().selectAutomation(resp.id);
+    } catch (e) {
+      set({ actionError: (e as Error).message });
+    }
   },
 
   deleteAutomation: async (id: string) => {
-    await api.deleteAutomation(id);
-    set((s) => ({
-      automations: s.automations.filter((a) => a.id !== id),
-      currentAutomationId: s.currentAutomationId === id ? null : s.currentAutomationId,
-      currentDefinition: s.currentAutomationId === id ? null : s.currentDefinition,
-      rfNodes: s.currentAutomationId === id ? [] : s.rfNodes,
-      rfEdges: s.currentAutomationId === id ? [] : s.rfEdges,
-    }));
+    try {
+      await api.deleteAutomation(id);
+      set((s) => ({
+        automations: s.automations.filter((a) => a.id !== id),
+        currentAutomationId: s.currentAutomationId === id ? null : s.currentAutomationId,
+        currentDefinition: s.currentAutomationId === id ? null : s.currentDefinition,
+        rfNodes: s.currentAutomationId === id ? [] : s.rfNodes,
+        rfEdges: s.currentAutomationId === id ? [] : s.rfEdges,
+        actionError: null,
+      }));
+    } catch (e) {
+      set({ actionError: (e as Error).message });
+    }
   },
 
   saveAutomation: async () => {
@@ -214,14 +236,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       currentDefinition.name,
       currentDefinition.settings,
     );
-    set({ currentDefinition: def, isDirty: false });
+    set({ currentDefinition: def, saveError: null });
     try {
       const resp = await api.updateAutomation(currentAutomationId, def);
       set((s) => ({
         automations: s.automations.map((a) => (a.id === resp.id ? resp : a)),
+        isDirty: false,
+        saveError: null,
       }));
-    } catch {
-      /* ignore */
+    } catch (e) {
+      set({ isDirty: true, saveError: (e as Error).message });
     }
   },
 
@@ -367,7 +391,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   fetchNodeExecutions: async (runId: string) => {
     try {
-      const executions = await api.listNodeExecutions(runId);
+      const run = await api.getRun(runId);
+      const executions = run.nodeExecutions ?? [];
       set((s) => ({
         nodeExecutions: { ...s.nodeExecutions, [runId]: executions },
       }));
@@ -413,6 +438,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   revertToVersion: async (versionNo: number) => {
+    if (!window.confirm("Are you sure you want to revert to this version?")) return;
     const { currentAutomationId } = get();
     if (!currentAutomationId) return;
     try {
@@ -535,6 +561,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setShowAiPanel: (show) => set({ showAiPanel: show }),
   setShowVersionHistory: (show) => set({ showVersionHistory: show }),
+  toggleSettings: () => set((s) => ({ settingsOpen: !s.settingsOpen })),
+
+  activateAutomation: async (id: string) => {
+    try {
+      const resp = await api.activateAutomation(id);
+      set((s) => ({
+        automations: s.automations.map((a) => (a.id === resp.id ? resp : a)),
+        actionError: null,
+      }));
+    } catch (e) {
+      set({ actionError: (e as Error).message });
+    }
+  },
+
+  deactivateAutomation: async (id: string) => {
+    try {
+      const resp = await api.deactivateAutomation(id);
+      set((s) => ({
+        automations: s.automations.map((a) => (a.id === resp.id ? resp : a)),
+        actionError: null,
+      }));
+    } catch (e) {
+      set({ actionError: (e as Error).message });
+    }
+  },
 
   fetchAiSettings: async () => {
     try {

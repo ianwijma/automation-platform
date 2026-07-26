@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
-import { listAgents, createJoinToken, updateAgentTags } from "./agent-routes.js";
+import { listAgents, createJoinToken, updateAgentTags, triggerAgentUpdate } from "./agent-routes.js";
 import { WssHub } from "./wss-hub.js";
 
 const MIGRATION_SQL = `
@@ -157,6 +157,45 @@ describe("updateAgentTags", () => {
     expect(res.status).toBe(404);
     const body = await res.json() as any;
     expect(body.error).toBe("Agent not found");
+  });
+});
+
+describe("triggerAgentUpdate", () => {
+  let hub: WssHub;
+
+  beforeEach(() => {
+    hub = new WssHub();
+  });
+
+  afterAll(() => {
+    hub.close();
+  });
+
+  test("returns 404 when agent not connected", async () => {
+    const res = triggerAgentUpdate(hub, "no-such-agent");
+    expect(res.status).toBe(404);
+    const body = await res.json() as any;
+    expect(body.error).toBe("Agent not connected");
+  });
+
+  test("sends self_update via hub and returns 202 when agent connected", async () => {
+    const ws = createMockWs();
+    hub.handleMessage(ws, JSON.stringify({
+      type: "hello",
+      name: "Update Agent",
+      version: "1.0.0",
+      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
+      token: "test-token",
+    }));
+    const agentId = JSON.parse(ws.sent[0]).agentId;
+
+    const res = triggerAgentUpdate(hub, agentId);
+    expect(res.status).toBe(202);
+    const body = await res.json() as any;
+    expect(body.message).toBe("Update triggered");
+
+    const lastSent = JSON.parse(ws.sent[ws.sent.length - 1]);
+    expect(lastSent.type).toBe("self_update");
   });
 });
 

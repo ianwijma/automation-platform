@@ -156,6 +156,7 @@ export function VersionHistory() {
   const versions = useAppStore((s) => s.versions);
   const previewVersion = useAppStore((s) => s.previewVersion);
   const fetchVersions = useAppStore((s) => s.fetchVersions);
+  const currentAutomationId = useAppStore((s) => s.currentAutomationId);
   const setPreviewVersion = useAppStore((s) => s.setPreviewVersion);
   const clearPreviewVersion = useAppStore((s) => s.clearPreviewVersion);
   const revertToVersion = useAppStore((s) => s.revertToVersion);
@@ -164,7 +165,7 @@ export function VersionHistory() {
 
   useEffect(() => {
     fetchVersions();
-  }, [fetchVersions]);
+  }, [fetchVersions, currentAutomationId]);
 
   return (
     <div className="flex h-full flex-col bg-gray-950">

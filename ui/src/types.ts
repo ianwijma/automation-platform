@@ -67,6 +67,7 @@ export interface RunResponse {
   startedAt: string;
   finishedAt: string | null;
   error: string | null;
+  nodeExecutions?: NodeExecutionResponse[];
 }
 
 export interface NodeItem {
@@ -119,6 +120,9 @@ export interface AutomationNodeData {
   name: string;
   target: AutomationTarget;
   params: Record<string, unknown>;
+  credentials?: { type: string; name: string } | null;
+  retry?: { attempts: number; backoffSec: number[] };
+  timeoutSec?: number;
   disabled: boolean;
   typeVersion: number;
 }

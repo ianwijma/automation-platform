@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAppStore } from "../store";
-import { Plus, Trash2, Zap, ZapOff } from "lucide-react";
+import { Plus, Trash2, Zap, ZapOff, X } from "lucide-react";
 
 export function AutomationList() {
   const automations = useAppStore((s) => s.automations);
@@ -8,6 +8,9 @@ export function AutomationList() {
   const selectAutomation = useAppStore((s) => s.selectAutomation);
   const createAutomation = useAppStore((s) => s.createAutomation);
   const deleteAutomation = useAppStore((s) => s.deleteAutomation);
+  const activateAutomation = useAppStore((s) => s.activateAutomation);
+  const deactivateAutomation = useAppStore((s) => s.deactivateAutomation);
+  const actionError = useAppStore((s) => s.actionError);
 
   const [newName, setNewName] = useState("");
   const [showCreate, setShowCreate] = useState(false);
@@ -38,6 +41,18 @@ export function AutomationList() {
           New
         </button>
       </div>
+
+      {actionError && (
+        <div className="flex items-center gap-2 border-b border-red-800 bg-red-950/40 px-3 py-1.5 text-[11px] text-red-400">
+          <span className="flex-1">{actionError}</span>
+          <button
+            onClick={() => useAppStore.setState({ actionError: null })}
+            className="rounded p-0.5 text-red-400 hover:text-red-300"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
       {showCreate && (
         <div className="border-b border-gray-800 px-3 py-2">
@@ -83,15 +98,26 @@ export function AutomationList() {
             }`}
             onClick={() => selectAutomation(auto.id)}
           >
-            {auto.activeVersionId ? (
-              <Zap className="h-3 w-3 text-green-400" />
-            ) : (
-              <ZapOff className="h-3 w-3 text-gray-600" />
-            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!window.confirm(auto.activeVersionId ? "Deactivate this automation?" : "Activate this automation?")) return;
+                auto.activeVersionId ? deactivateAutomation(auto.id) : activateAutomation(auto.id);
+              }}
+              className="transition-colors"
+              title={auto.activeVersionId ? "Deactivate" : "Activate"}
+            >
+              {auto.activeVersionId ? (
+                <Zap className="h-3 w-3 text-green-400" />
+              ) : (
+                <ZapOff className="h-3 w-3 text-gray-600" />
+              )}
+            </button>
             <span className="flex-1 truncate">{auto.name}</span>
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                if (!window.confirm("Delete this automation?")) return;
                 deleteAutomation(auto.id);
               }}
               className="invisible rounded p-0.5 text-gray-600 transition-colors hover:text-red-400 group-hover:visible"

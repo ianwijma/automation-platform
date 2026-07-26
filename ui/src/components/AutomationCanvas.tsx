@@ -93,8 +93,8 @@ function AutomationCanvasInner() {
       if (!bounds) return;
 
       const position = reactFlow.screenToFlowPosition({
-        x: event.clientX - bounds.left,
-        y: event.clientY - bounds.top,
+        x: event.clientX,
+        y: event.clientY,
       });
 
       const ports = getPalettePorts(paletteNode.type);

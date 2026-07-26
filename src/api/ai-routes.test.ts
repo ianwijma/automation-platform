@@ -1,7 +1,8 @@
-import { describe, test, expect, beforeEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
-import { handleAiChat, handleAiApply } from "./ai-routes.js";
+import { handleAiChat, handleAiApply, handleAiModels } from "./ai-routes.js";
 import type { AiDiff } from "../core/api-types.js";
+import { MockOpenRouter } from "../test-utils/mock-openrouter.js";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -169,5 +170,56 @@ describe("handleAiApply", () => {
     const body = await res.json();
     expect(body.definition.nodes.length).toBe(1);
     expect(body.definition.nodes[0].id).toBe("new-node");
+  });
+});
+
+describe("handleAiModels", () => {
+  let db: Database;
+  let mockServer: MockOpenRouter;
+  let mockUrl: string;
+
+  beforeEach(async () => {
+    db = createTestDb();
+    mockServer = new MockOpenRouter();
+    mockUrl = await mockServer.start();
+  });
+
+  afterAll(() => {
+    mockServer?.stop();
+  });
+
+  test("returns 400 when no API key configured", async () => {
+    const req = new Request("http://localhost/api/ai/models");
+    const res = await handleAiModels(db, req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("API key not configured");
+  });
+
+  test("returns models from mock OpenRouter", async () => {
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-test-key");
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_endpoint", mockUrl);
+
+    mockServer.setModelList(["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta/llama-3"]);
+
+    const req = new Request("http://localhost/api/ai/models");
+    const res = await handleAiModels(db, req);
+    expect(res.status).toBe(200);
+    const body = await res.json() as any;
+    expect(body.models).toBeDefined();
+    expect(body.models.sort()).toEqual(["anthropic/claude-3.5-sonnet", "meta/llama-3", "openai/gpt-4o-mini"]);
+  });
+
+  test("returns 500 when API fails", async () => {
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-fail-key");
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_endpoint", mockUrl);
+
+    mockServer.setFailure(500);
+
+    const req = new Request("http://localhost/api/ai/models");
+    const res = await handleAiModels(db, req);
+    expect(res.status).toBe(500);
+    const body = await res.json() as any;
+    expect(body.error).toBeDefined();
   });
 });

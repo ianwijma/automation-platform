@@ -1,5 +1,7 @@
+import { useState, useEffect } from "react";
 import { useAppStore } from "../store";
 import type { RunResponse, NodeExecutionResponse } from "../types";
+import { DataPreview } from "./DataPreview";
 import {
   CheckCircle2,
   XCircle,
@@ -75,12 +77,25 @@ function RunItem({
   );
 }
 
-function NodeExecutionRow({ exec }: { exec: NodeExecutionResponse }) {
+function NodeExecutionRow({
+  exec,
+  selected,
+  onClick,
+}: {
+  exec: NodeExecutionResponse;
+  selected: boolean;
+  onClick: () => void;
+}) {
   const config = NODE_STATUS_CONFIG[exec.status] ?? DEFAULT_NODE_STATUS;
   const Icon = config.icon;
 
   return (
-    <div className="flex items-center gap-2 rounded px-2 py-1.5 text-[11px]">
+    <button
+      onClick={onClick}
+      className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-[11px] text-left transition-colors ${
+        selected ? "bg-indigo-500/15 text-indigo-300" : "text-gray-400 hover:bg-gray-800/60"
+      }`}
+    >
       <Icon className={`h-3 w-3 ${config.color}`} />
       <span className="flex-1 truncate text-gray-300">{exec.nodeId}</span>
       <span className="text-gray-600">{formatDuration(exec.durationMs)}</span>
@@ -94,7 +109,7 @@ function NodeExecutionRow({ exec }: { exec: NodeExecutionResponse }) {
           {exec.error}
         </span>
       )}
-    </div>
+    </button>
   );
 }
 
@@ -104,15 +119,33 @@ export function RunPanel() {
   const nodeExecutions = useAppStore((s) => s.nodeExecutions);
   const setCurrentRunId = useAppStore((s) => s.setCurrentRunId);
   const fetchNodeExecutions = useAppStore((s) => s.fetchNodeExecutions);
+  const fetchRuns = useAppStore((s) => s.fetchRuns);
+  const currentAutomationId = useAppStore((s) => s.currentAutomationId);
+
+  const [selectedNodeExecId, setSelectedNodeExecId] = useState<string | null>(null);
+  const [pinnedPreview, setPinnedPreview] = useState(false);
 
   const currentRun = runs.find((r) => r.id === currentRunId);
   const currentExecutions = currentRunId
     ? nodeExecutions[currentRunId] ?? []
     : [];
 
+  const selectedExec = selectedNodeExecId
+    ? currentExecutions.find((e) => e.id === selectedNodeExecId)
+    : null;
+
+  useEffect(() => {
+    fetchRuns();
+  }, [fetchRuns, currentAutomationId]);
+
   const handleSelectRun = async (runId: string) => {
     setCurrentRunId(runId);
+    setSelectedNodeExecId(null);
     await fetchNodeExecutions(runId);
+  };
+
+  const handleSelectNodeExec = (execId: string) => {
+    setSelectedNodeExecId(selectedNodeExecId === execId ? null : execId);
   };
 
   return (
@@ -170,16 +203,39 @@ export function RunPanel() {
               Node Executions
             </span>
           </div>
-          <div className="flex-1 overflow-y-auto p-1">
+          <div className="max-h-[200px] overflow-y-auto p-1">
             {currentExecutions.length === 0 && (
               <div className="px-3 py-2 text-center text-[11px] text-gray-600">
                 No execution data
               </div>
             )}
             {currentExecutions.map((exec) => (
-              <NodeExecutionRow key={exec.id} exec={exec} />
+              <NodeExecutionRow
+                key={exec.id}
+                exec={exec}
+                selected={exec.id === selectedNodeExecId}
+                onClick={() => handleSelectNodeExec(exec.id)}
+              />
             ))}
           </div>
+
+          {selectedExec && (
+            <>
+              <div className="border-t border-gray-800 px-2 py-1">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                  Data Preview — {selectedExec.nodeId}
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto">
+                <DataPreview
+                  input={selectedExec.input}
+                  output={selectedExec.output}
+                  pinned={pinnedPreview}
+                  onTogglePin={() => setPinnedPreview(!pinnedPreview)}
+                />
+              </div>
+            </>
+          )}
         </>
       )}
     </div>

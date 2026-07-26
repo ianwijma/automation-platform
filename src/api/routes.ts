@@ -43,7 +43,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-function matchRoute(pathname: string, pattern: string): Record<string, string> | null {
+export function matchRoute(pathname: string, pattern: string): Record<string, string> | null {
   const patternParts = pattern.split("/");
   const pathParts = pathname.split("/");
 

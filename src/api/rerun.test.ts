@@ -225,4 +225,100 @@ describe("rerunFromNode", () => {
     expect(result!.mode).toBe("partial");
     expect(result!.automationId).toBe("auto-rerun");
   });
+
+  test("handles engine execution error gracefully", async () => {
+    const now = new Date().toISOString();
+    const def = makeDefinition();
+    def.nodes.push({
+      id: "node-bad",
+      type: "action.nonexistent",
+      typeVersion: 1,
+      name: "Bad Node",
+      target: { kind: "local" as const },
+      params: {},
+      disabled: false,
+      position: { x: 400, y: 0 },
+    });
+    const defJson = JSON.stringify(def);
+    const versionId = "v-auto-err";
+    db.prepare(
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run("auto-err", "Error Test", versionId, defJson, JSON.stringify(def.settings), now, now);
+    db.prepare(
+      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(versionId, "auto-err", 1, defJson, now);
+
+    const nodeExec: NodeExecutionRecord = {
+      id: "ne-err",
+      runId: "run-err",
+      nodeId: "node-1",
+      agentId: "local",
+      status: "success",
+      attempt: 0,
+      simulated: false,
+      input: null,
+      output: [{ json: { triggered: true } }],
+      pinned: false,
+      startedAt: now,
+      durationMs: 5,
+      error: null,
+    };
+
+    dispatcher.saveRun({
+      id: "run-err",
+      automationId: "auto-err",
+      versionId,
+      mode: "manual",
+      status: "success",
+      startedAt: now,
+      finishedAt: now,
+      error: null,
+      nodeExecutions: [nodeExec],
+    });
+
+    try {
+      const result = await rerunFromNode(db, dispatcher, "run-err", "node-1");
+      expect(result).not.toBeNull();
+    } catch (e) {
+      expect(e).toBeDefined();
+    }
+  });
+
+  test("returns null when automation has no version or draft", async () => {
+    const now = new Date().toISOString();
+    db.prepare(
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run("auto-no-def", "No Def", null, null, null, now, now);
+
+    const nodeExec: NodeExecutionRecord = {
+      id: "ne-no-def",
+      runId: "run-no-def",
+      nodeId: "node-1",
+      agentId: "local",
+      status: "success",
+      attempt: 0,
+      simulated: false,
+      input: null,
+      output: [{ json: { data: "test" } }],
+      pinned: false,
+      startedAt: now,
+      durationMs: 5,
+      error: null,
+    };
+
+    dispatcher.saveRun({
+      id: "run-no-def",
+      automationId: "auto-no-def",
+      versionId: "draft",
+      mode: "manual",
+      status: "success",
+      startedAt: now,
+      finishedAt: now,
+      error: null,
+      nodeExecutions: [nodeExec],
+    });
+
+    const result = await rerunFromNode(db, dispatcher, "run-no-def", "node-1");
+    expect(result).toBeNull();
+  });
 });

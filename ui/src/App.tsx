@@ -7,6 +7,7 @@ import { AutomationList } from "./components/AutomationList";
 import { RunPanel } from "./components/RunPanel";
 import { AiPanel } from "./components/AiPanel";
 import { VersionHistory } from "./components/VersionHistory";
+import { SettingsPanel } from "./components/SettingsPanel";
 import {
   Play,
   Save,
@@ -47,6 +48,9 @@ function App() {
   const showVersionHistory = useAppStore((s) => s.showVersionHistory);
   const setShowAiPanel = useAppStore((s) => s.setShowAiPanel);
   const setShowVersionHistory = useAppStore((s) => s.setShowVersionHistory);
+  const settingsOpen = useAppStore((s) => s.settingsOpen);
+  const toggleSettings = useAppStore((s) => s.toggleSettings);
+  const saveError = useAppStore((s) => s.saveError);
 
   useEffect(() => {
     fetchSystemInfo();
@@ -153,6 +157,13 @@ function App() {
         </div>
       </header>
 
+      {saveError && (
+        <div className="flex items-center gap-2 border-b border-red-800 bg-red-950/40 px-4 py-1.5 text-xs text-red-400">
+          <span className="font-medium">Save failed:</span>
+          <span>{saveError}</span>
+        </div>
+      )}
+
       {isPreviewMode && previewVersion && (
         <div className="flex items-center gap-2 border-b border-indigo-700/30 bg-indigo-950/30 px-4 py-1.5 text-xs text-indigo-400">
           <Eye className="h-3.5 w-3.5" />
@@ -229,7 +240,13 @@ function App() {
           </div>
         )}
 
-        {!showVersionHistory && !showAiPanel && (
+        {settingsOpen && (
+          <div className="w-72 shrink-0 border-l border-gray-800 bg-gray-950">
+            <SettingsPanel />
+          </div>
+        )}
+
+        {!showVersionHistory && !showAiPanel && !settingsOpen && (
           <div className="w-56 shrink-0 border-l border-gray-800 bg-gray-950">
             <RunPanel />
           </div>
@@ -249,7 +266,12 @@ function App() {
             <MessageSquare className="h-3 w-3" />
             AI Chat
           </button>
-          <button className="flex items-center gap-1 rounded px-1.5 py-0.5 text-gray-600 hover:text-gray-400">
+          <button
+            onClick={toggleSettings}
+            className={`flex items-center gap-1 rounded px-1.5 py-0.5 ${
+              settingsOpen ? "text-indigo-400" : "text-gray-600 hover:text-gray-400"
+            }`}
+          >
             <Settings className="h-3 w-3" />
             Settings
           </button>
