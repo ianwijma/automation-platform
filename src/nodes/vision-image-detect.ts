@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { safeSpawn, spawnAndCapture } from "../core/safe-spawn.js";
 
 interface ImageDetectParams {
   template: string;
@@ -23,16 +24,14 @@ const definition: NodeDefinition<ImageDetectParams> = {
   },
 
   async run(ctx: RunContext<ImageDetectParams>): Promise<NodeItem[]> {
-    const { template, confidence } = ctx.params;
+    const { template } = ctx.params;
+    const confidence = ctx.params.confidence ?? 0.8;
     const screenshotItem = ctx.items.find((item) => item.json?.filename);
     const screenshotPath = (screenshotItem?.json?.filename as string) ?? "/tmp/ap_screenshot.png";
 
     let compareAvailable = false;
     try {
-      const checkProc = Bun.spawn(["which", "compare"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+      const checkProc = await safeSpawn({ cmd: ["which", "compare"] });
       compareAvailable = (await checkProc.exited) === 0;
     } catch {}
 
@@ -40,15 +39,11 @@ const definition: NodeDefinition<ImageDetectParams> = {
       throw new Error("ImageMagick 'compare' command not found. Install imagemagick: apt install imagemagick");
     }
 
-    const proc = Bun.spawn(["compare", "-metric", "RMSE", screenshotPath, template, "null:"], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const { stderr: compareStderr } = await spawnAndCapture({
+      cmd: ["compare", "-metric", "RMSE", screenshotPath, template, "null:"],
     });
 
-    await proc.exited;
-    const stderr = await new Response(proc.stderr).text();
-
-    const rmseMatch = stderr.match(/([\d.]+)/);
+    const rmseMatch = compareStderr.match(/([\d.]+)/);
     const rmseValue = rmseMatch ? parseFloat(rmseMatch[1]) : 1;
 
     const normalizedError = Math.min(rmseValue, 1);

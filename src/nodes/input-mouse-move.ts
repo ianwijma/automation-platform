@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface MouseMoveParams {
   x: number;
@@ -34,23 +35,13 @@ const definition: NodeDefinition<MouseMoveParams> = {
     const inputMethod = detectInputMethod();
 
     if (inputMethod === "xdotool") {
-      const proc = Bun.spawn(["xdotool", "mousemove", String(x), String(y)], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["xdotool", "mousemove", String(x), String(y)] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`xdotool mousemove failed: ${stderr}`);
       }
     } else if (inputMethod === "ydotool") {
-      const proc = Bun.spawn(["ydotool", "mousemove", "--absolute", String(x), String(y)], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["ydotool", "mousemove", "--absolute", String(x), String(y)] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`ydotool mousemove failed: ${stderr}`);
       }
     } else {

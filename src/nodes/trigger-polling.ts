@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { safeSpawn } from "../core/safe-spawn.js";
 
 interface PollingParams {
   intervalSec: number;
@@ -20,10 +21,7 @@ async function executePoll(targetType: string, target: string): Promise<Record<s
   }
 
   if (targetType === "command") {
-    const proc = Bun.spawn(target.split(/\s+/), {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = await safeSpawn({ cmd: target.split(/\s+/) });
     const exitCode = await proc.exited;
     const stdout = await new Response(proc.stdout).text();
     const stderr = await new Response(proc.stderr).text();

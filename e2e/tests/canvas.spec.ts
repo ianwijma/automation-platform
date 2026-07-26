@@ -62,7 +62,7 @@ test.describe("Canvas Visual Editor", () => {
     await page.waitForSelector('text="Edges Test"');
     await page.click('text="Edges Test"');
 
-    await page.waitForSelector(".react-flow__edge", { timeout: 5000 });
+    await page.waitForSelector(".react-flow__edge", { timeout: 5000, state: "attached" });
     const edges = await page.locator(".react-flow__edge").count();
     expect(edges).toBe(SIMPLE_MANUAL_COMMAND.edges.length);
   });
@@ -130,6 +130,29 @@ test.describe("Canvas Visual Editor", () => {
     await page.waitForTimeout(500);
     const nodeCountAfter = await page.locator(".react-flow__node").count();
     expect(nodeCountAfter).toBeLessThan(nodeCountBefore);
+  });
+
+  test("delete edge via select and backspace removes connection", async ({ page, testServer, request }) => {
+    await request.post(`${testServer.url}/api/automations`, {
+      data: { name: "Edge Delete Test", definition: SIMPLE_MANUAL_COMMAND },
+    });
+
+    await page.goto(testServer.url);
+    await page.waitForSelector('text="Edge Delete Test"');
+    await page.click('text="Edge Delete Test"');
+
+    await page.waitForSelector(".react-flow__edge", { timeout: 5000, state: "attached" });
+    const edgeCountBefore = await page.locator(".react-flow__edge").count();
+    expect(edgeCountBefore).toBe(SIMPLE_MANUAL_COMMAND.edges.length);
+
+    const edge = page.locator(".react-flow__edge").first();
+    await edge.click({ force: true });
+    await page.waitForTimeout(200);
+    await page.keyboard.press("Backspace");
+
+    await page.waitForTimeout(500);
+    const edgeCountAfter = await page.locator(".react-flow__edge").count();
+    expect(edgeCountAfter).toBe(edgeCountBefore - 1);
   });
 
   test("node palette category expands on click", async ({ page, testServer, request }) => {

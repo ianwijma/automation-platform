@@ -172,7 +172,7 @@ describe("M10 — Hardening & E2E", () => {
     expect(followup?.status).toBe("success");
   });
 
-  test("dry-run produces simulation reports for side-effecting nodes", async () => {
+  test("dry-run produces simulation reports for all nodes", async () => {
     const run = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-5", "v1", {
       mode: "dry",
       dryRun: true,
@@ -184,7 +184,47 @@ describe("M10 — Hardening & E2E", () => {
     expect(cmd1?.simulated).toBe(true);
 
     const ifNode = run.nodeExecutions.find((n) => n.nodeId === "n4");
-    expect(ifNode?.simulated).toBe(false);
+    expect(ifNode?.simulated).toBe(true);
+  });
+
+  test("nodeScope 'single' executes only the target node", async () => {
+    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-single-1", "v1", {
+      mode: "partial",
+      fromNodeId: "n2",
+      nodeScope: "single",
+      pinData: { n1: [{ json: { test: true } }] },
+    });
+    expect(run.status).toBe("success");
+    expect(run.nodeExecutions.length).toBe(1);
+    expect(run.nodeExecutions[0].nodeId).toBe("n2");
+    expect(run.nodeExecutions[0].simulated).toBe(false);
+  });
+
+  test("nodeScope 'to' executes upstream + target, not downstream", async () => {
+    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-to-1", "v1", {
+      mode: "partial",
+      fromNodeId: "n4",
+      nodeScope: "to",
+    });
+    expect(run.status).toBe("success");
+    const executedIds = run.nodeExecutions.map((ne) => ne.nodeId);
+    expect(executedIds).toContain("n1");
+    expect(executedIds).toContain("n2");
+    expect(executedIds).toContain("n4");
+    expect(executedIds).not.toContain("n5");
+  });
+
+  test("nodeScope 'from' (default) executes from node onward", async () => {
+    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-from-1", "v1", {
+      mode: "partial",
+      fromNodeId: "n4",
+      nodeScope: "from",
+    });
+    expect(run.status).toBe("success");
+    const executedIds = run.nodeExecutions.map((ne) => ne.nodeId);
+    expect(executedIds).toContain("n4");
+    expect(executedIds).toContain("n5");
+    expect(executedIds).not.toContain("n2");
   });
 
   test("error path: command fails and run errors", async () => {

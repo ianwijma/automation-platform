@@ -1,8 +1,8 @@
 import { useState } from "react";
-import type { NodeItem } from "../types";
-import { Pin, PinOff } from "lucide-react";
+import type { NodeItem, ArtifactRef } from "../types";
+import { Pin, PinOff, Download } from "lucide-react";
 
-type ViewTab = "table" | "json" | "raw";
+type ViewTab = "table" | "json" | "raw" | "preview";
 type IOTab = "input" | "output";
 
 function TableView({ items }: { items: NodeItem[] }) {
@@ -14,7 +14,7 @@ function TableView({ items }: { items: NodeItem[] }) {
   for (const item of items) {
     for (const k of Object.keys(item.json)) {
       keys.add(k);
-  }
+    }
   }
   const columns = Array.from(keys);
 
@@ -66,6 +66,68 @@ function RawView({ data }: { data: unknown }) {
   );
 }
 
+function BinaryPreview({ items }: { items: NodeItem[] }) {
+  const artifacts: { key: string; ref: ArtifactRef }[] = [];
+  for (const item of items) {
+    if (item.binary) {
+      for (const [key, ref] of Object.entries(item.binary)) {
+        if (ref.$artifact && ref.$artifact !== "pending") {
+          artifacts.push({ key, ref });
+        }
+      }
+    }
+  }
+
+  if (artifacts.length === 0) {
+    return <div className="py-3 text-center text-[11px] text-gray-600">No artifacts</div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {artifacts.map(({ key, ref }) => {
+        if (ref.mime.startsWith("image/")) {
+          return (
+            <div key={key} className="flex flex-col gap-1">
+              <img
+                src={`/api/artifacts/${ref.$artifact}`}
+                alt={ref.name}
+                className="max-h-[400px] max-w-full rounded border border-gray-700 object-contain"
+              />
+              <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                <span>{ref.name}</span>
+                <span>{ref.mime}</span>
+                <span>{(ref.size / 1024).toFixed(1)} KB</span>
+                <a
+                  href={`/api/artifacts/${ref.$artifact}`}
+                  download={ref.name}
+                  className="text-indigo-400 hover:text-indigo-300"
+                >
+                  <Download className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div key={key} className="flex items-center gap-2 rounded bg-gray-800 px-2 py-1.5 text-[11px] text-gray-300">
+            <span>{ref.name}</span>
+            <span className="text-gray-500">{ref.mime}</span>
+            <span className="text-gray-500">{(ref.size / 1024).toFixed(1)} KB</span>
+            <a
+              href={`/api/artifacts/${ref.$artifact}`}
+              download={ref.name}
+              className="text-indigo-400 hover:text-indigo-300"
+            >
+              <Download className="h-3 w-3" />
+            </a>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DataPreview({
   input,
   output,
@@ -83,7 +145,12 @@ export function DataPreview({
   const data = ioTab === "input" ? input : output;
   const items = data ?? [];
 
+  const hasBinary = items.some(
+    (item) => item.binary && Object.values(item.binary).some((ref) => ref.$artifact && ref.$artifact !== "pending"),
+  );
+
   const VIEW_TABS: { key: ViewTab; label: string }[] = [
+    ...(hasBinary ? [{ key: "preview" as ViewTab, label: "Preview" }] : []),
     { key: "table", label: "Table" },
     { key: "json", label: "JSON" },
     { key: "raw", label: "Raw" },
@@ -140,6 +207,7 @@ export function DataPreview({
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
+        {viewTab === "preview" && <BinaryPreview items={items} />}
         {viewTab === "table" && <TableView items={items} />}
         {viewTab === "json" && <JsonView data={data} />}
         {viewTab === "raw" && <RawView data={data} />}

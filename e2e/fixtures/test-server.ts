@@ -14,6 +14,7 @@ import { createDatabase } from "${projectDir}/src/db/database.js";
 import { createServer } from "${projectDir}/src/api/server.js";
 import { resolveConfig } from "${projectDir}/src/cli/config.js";
 import { setAiSettings } from "${projectDir}/src/core/ai-settings.js";
+import "${projectDir}/src/nodes/index.js";
 import { mkdirSync } from "node:fs";
 
 const dataDir = process.env.AP_E2E_DATA_DIR!;

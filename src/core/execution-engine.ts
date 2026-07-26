@@ -9,6 +9,7 @@ export interface RunOptions {
   mode: "manual" | "trigger" | "dry" | "partial";
   dryRun?: boolean;
   fromNodeId?: string;
+  nodeScope?: "from" | "to" | "single";
   pinData?: Record<string, NodeItem[]>;
   triggerData?: NodeItem[];
 }
@@ -193,7 +194,17 @@ export class ExecutionEngine {
     const outputs: NodeOutputMap = new Map();
 
     if (options.fromNodeId) {
-      const nodesToRun = findFromNodeOnward(definition, options.fromNodeId);
+      const scope = options.nodeScope ?? "from";
+      let nodesToRun: Set<string>;
+
+      if (scope === "single") {
+        nodesToRun = new Set([options.fromNodeId]);
+      } else if (scope === "to") {
+        nodesToRun = findUpstreamNodes(definition, options.fromNodeId);
+      } else {
+        nodesToRun = findFromNodeOnward(definition, options.fromNodeId);
+      }
+
       executionOrder = topologicalOrder.filter((id) => nodesToRun.has(id));
 
       if (options.pinData) {
@@ -323,7 +334,7 @@ export class ExecutionEngine {
           outputs.set(nodeId, result.items);
 
           const nodeExecRecord = this.createNodeExecRecord(
-            runId, nodeId, agent.agentId, "success", attempt, isDryRun && nodeDef.sideEffecting,
+            runId, nodeId, agent.agentId, "success", attempt, isDryRun,
             inputItems, result.items, false,
             nodeStart, result.durationMs, null, savePayloads,
           );
@@ -343,7 +354,7 @@ export class ExecutionEngine {
 
       if (!succeeded) {
         const nodeExecRecord = this.createNodeExecRecord(
-          runId, nodeId, agent.agentId, "error", retry.attempts, isDryRun && nodeDef.sideEffecting,
+          runId, nodeId, agent.agentId, "error", retry.attempts, isDryRun,
           inputItems, null, false,
           startedAt, 0, lastError, savePayloads,
         );

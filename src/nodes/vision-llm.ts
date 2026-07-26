@@ -24,7 +24,9 @@ const definition: NodeDefinition<LlmVisionParams> = {
   },
 
   async run(ctx: RunContext<LlmVisionParams>): Promise<NodeItem[]> {
-    const { prompt, model, imagePath, apiKey } = ctx.params;
+    const { prompt, imagePath } = ctx.params;
+    const model = ctx.params.model ?? "openai/gpt-4o";
+    const apiKey = ctx.params.apiKey;
     const effectiveApiKey = apiKey ?? ctx.secrets.OPENROUTER_API_KEY ?? "";
 
     if (!effectiveApiKey) {

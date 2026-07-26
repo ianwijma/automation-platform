@@ -3,7 +3,7 @@ import { useAppStore } from "../store";
 import type { AutomationTarget } from "../types";
 import { CATEGORY_COLORS, CATEGORY_TEXT } from "../types";
 import { findPaletteNode } from "./NodePalette";
-import { Trash2, Power, Monitor, Server, Tag, Zap } from "lucide-react";
+import { Trash2, Power, Monitor, Server, Tag, Zap, Play, Loader2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
 
 const TARGET_OPTIONS: { kind: AutomationTarget["kind"]; icon: typeof Monitor; label: string }[] = [
   { kind: "local", icon: Monitor, label: "Local" },
@@ -167,6 +167,10 @@ export function NodeEditor() {
   const rfNodes = useAppStore((s) => s.rfNodes);
   const updateNodeData = useAppStore((s) => s.updateNodeData);
   const removeNode = useAppStore((s) => s.removeNode);
+  const executeNode = useAppStore((s) => s.executeNode);
+  const [isExecutingNode, setIsExecutingNode] = useState(false);
+  const [showTestInput, setShowTestInput] = useState(false);
+  const [testInputJson, setTestInputJson] = useState('[{ "json": {} }]');
 
   const selectedNode = rfNodes.find((n) => n.id === selectedNodeId);
   if (!selectedNode) {
@@ -290,26 +294,90 @@ export function NodeEditor() {
           />
         </div>
 
-        <div className="flex items-center justify-between border-t border-gray-800 pt-2">
+        <div className="border-t border-gray-800 pt-2">
           <button
-            onClick={handleDisabledToggle}
-            className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
-              data.disabled
-                ? "bg-red-500/20 text-red-400"
-                : "bg-gray-800 text-gray-500 hover:text-gray-300"
-            }`}
+            onClick={() => setShowTestInput(!showTestInput)}
+            className="flex w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-gray-500 hover:text-gray-300"
           >
-            <Power className="h-3 w-3" />
-            {data.disabled ? "Disabled" : "Enabled"}
+            {showTestInput ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            Test Input
           </button>
+          {showTestInput && (
+            <div className="mt-2 flex flex-col gap-1">
+              <textarea
+                value={testInputJson}
+                onChange={(e) => setTestInputJson(e.target.value)}
+                rows={3}
+                placeholder='[{ "json": { "key": "value" } }]'
+                className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 font-mono text-[11px] text-gray-200 outline-none focus:border-gray-500"
+              />
+              <div className="text-[9px] text-gray-600">
+                JSON array of items to feed into trigger nodes when executing
+              </div>
+            </div>
+          )}
+        </div>
 
-          <button
-            onClick={handleDelete}
-            className="flex items-center gap-1.5 rounded bg-red-500/10 px-2.5 py-1.5 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/20"
-          >
-            <Trash2 className="h-3 w-3" />
-            Delete
-          </button>
+        <div className="flex items-center justify-between border-t border-gray-800 pt-2">
+          <div className="flex items-center gap-1">
+            <button
+              onClick={async () => {
+                setIsExecutingNode(true);
+                try {
+                  let inputData;
+                  try { inputData = JSON.parse(testInputJson); } catch { inputData = undefined; }
+                  await executeNode(selectedNode.id, false, inputData);
+                } finally {
+                  setIsExecutingNode(false);
+                }
+              }}
+              disabled={isExecutingNode}
+              className="flex items-center gap-1 rounded bg-green-600/20 px-2 py-1 text-[11px] font-medium text-green-400 transition-colors hover:bg-green-600/30 disabled:opacity-50"
+              title="Execute this node (uses cached inputs from last run)"
+            >
+              {isExecutingNode ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+              Execute
+            </button>
+            <button
+              onClick={async () => {
+                setIsExecutingNode(true);
+                try {
+                  let inputData;
+                  try { inputData = JSON.parse(testInputJson); } catch { inputData = undefined; }
+                  await executeNode(selectedNode.id, true, inputData);
+                } finally {
+                  setIsExecutingNode(false);
+                }
+              }}
+              disabled={isExecutingNode}
+              className="rounded p-1 text-gray-500 transition-colors hover:text-green-400 disabled:opacity-50"
+              title="Execute with fresh inputs (re-runs upstream nodes)"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={handleDisabledToggle}
+              className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-medium transition-colors ${
+                data.disabled
+                  ? "bg-red-500/20 text-red-400"
+                  : "bg-gray-800 text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              <Power className="h-3 w-3" />
+              {data.disabled ? "Disabled" : "Enabled"}
+            </button>
+
+            <button
+              onClick={handleDelete}
+              className="flex items-center gap-1.5 rounded bg-red-500/10 px-2.5 py-1.5 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/20"
+            >
+              <Trash2 className="h-3 w-3" />
+              Delete
+            </button>
+          </div>
         </div>
 
         {paletteNode && (

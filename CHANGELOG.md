@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Execute Node**: n8n-style per-node execution from the editor — click Play in NodeEditor to run a single node and preview its output; cached upstream inputs reused automatically; fresh-input option via secondary button; `POST /api/automations/:id/run-node/:nodeId` API
+- **Artifact-backed screenshots**: `vision.screenshot` now stores PNGs in the ArtifactStore with real artifact refs; DataPreview renders images inline via `<img src="/api/artifacts/:id">`; binary file download links for non-image artifacts
+- **Launch Program node** (`system.launch`): spawns a detached process, captures PID, optional `waitForWindowSec` polling via xdotool/hyprctl/swaymsg
+- **Window List node** (`vision.window.list`): enumerates windows with geometry via `wmctrl` (X11) or `hyprctl`/`swaymsg` (Wayland); supports regex title filter and PID filter
+- **Window Screenshot node** (`vision.window.screenshot`): captures a specific window by ID/PID/title via `maim`/`import` (X11) or `grim` (Wayland wlroots); stores artifact for preview
+- Engine `nodeScope` option: `"single"` (node only), `"to"` (upstream + node), `"from"` (node + downstream, default)
+- "cached" badge in RunPanel for pinned node executions
+- Capability probe: detects `wmctrl`, `xwininfo`, `hyprctl`, `swaymsg`, `slurp`
+- 3 new palette entries: Launch Program, Window List, Window Screenshot
+
 ## [0.1.0] - 2025-07-26
 
 ### Added

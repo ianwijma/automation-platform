@@ -6,7 +6,7 @@ import { createServer } from "./server.js";
 import { AppDatabase, createDatabase } from "../db/database.js";
 import type { AppConfig } from "../cli/config.js";
 
-const MOCK_UI_DIR = resolve(import.meta.dir, "../../ui/dist");
+const MOCK_UI_DIR = resolve("/tmp/ap-server-test-ui-" + Date.now());
 const TEST_FILE_CONTENT = "<!DOCTYPE html><html><body>test</body></html>";
 
 const MIGRATION_SQL = `
@@ -139,10 +139,9 @@ describe("HTTP server", () => {
     tmpDataDir = resolve("/tmp/ap-server-test-" + Date.now());
     mkdirSync(tmpDataDir, { recursive: true });
 
-    const uiDist = MOCK_UI_DIR;
-    mkdirSync(uiDist, { recursive: true });
-    writeFileSync(join(uiDist, "index.html"), TEST_FILE_CONTENT);
-    writeFileSync(join(uiDist, "test.txt"), "hello world");
+    mkdirSync(MOCK_UI_DIR, { recursive: true });
+    writeFileSync(join(MOCK_UI_DIR, "index.html"), TEST_FILE_CONTENT);
+    writeFileSync(join(MOCK_UI_DIR, "test.txt"), "hello world");
 
     const db = createTestAppDb();
     const config: AppConfig = {
@@ -155,7 +154,7 @@ describe("HTTP server", () => {
       dbPath: ":memory:",
     };
 
-    server = createServer({ port: 0, host: "127.0.0.1", db, config });
+    server = createServer({ port: 0, host: "127.0.0.1", db, config, uiDist: MOCK_UI_DIR });
     baseUrl = `http://127.0.0.1:${server.server.port}`;
   });
 
@@ -166,6 +165,9 @@ describe("HTTP server", () => {
     }
     if (existsSync(tmpDataDir)) {
       rmSync(tmpDataDir, { recursive: true, force: true });
+    }
+    if (existsSync(MOCK_UI_DIR)) {
+      rmSync(MOCK_UI_DIR, { recursive: true, force: true });
     }
   });
 

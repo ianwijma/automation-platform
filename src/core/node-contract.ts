@@ -31,6 +31,10 @@ export interface SimulationReport {
   data?: NodeItem[];
 }
 
+export interface ArtifactStoreHandle {
+  store(data: ArrayBuffer | Uint8Array, mime: string, name: string, ttlHours?: number): Promise<ArtifactRef>;
+}
+
 export interface RunContext<P = unknown> {
   nodeId: string;
   nodeName: string;
@@ -40,12 +44,13 @@ export interface RunContext<P = unknown> {
   secrets: Record<string, string>;
   state: {
     get(key: string): unknown;
-    set(key: string, value: unknown): void;
+    set(key: string, value: void): void;
   };
   now: Date;
   agentId: string;
   runId: string;
   dryRun: boolean;
+  artifacts?: ArtifactStoreHandle;
 }
 
 export interface NodeDefinition<P = unknown> {

@@ -33,6 +33,7 @@ function App() {
   const systemError = useAppStore((s) => s.systemError);
   const fetchSystemInfo = useAppStore((s) => s.fetchSystemInfo);
   const fetchAutomations = useAppStore((s) => s.fetchAutomations);
+  const fetchAgents = useAppStore((s) => s.fetchAgents);
   const currentAutomationId = useAppStore((s) => s.currentAutomationId);
   const currentDefinition = useAppStore((s) => s.currentDefinition);
   const isDirty = useAppStore((s) => s.isDirty);
@@ -55,7 +56,8 @@ function App() {
   useEffect(() => {
     fetchSystemInfo();
     fetchAutomations();
-  }, [fetchSystemInfo, fetchAutomations]);
+    fetchAgents();
+  }, [fetchSystemInfo, fetchAutomations, fetchAgents]);
 
   const handleSave = useCallback(() => {
     saveAutomation();

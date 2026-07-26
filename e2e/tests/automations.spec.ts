@@ -117,7 +117,7 @@ test.describe("Automations", () => {
     await page.waitForSelector('text="UIDelete"');
 
     page.on("dialog", (dialog) => dialog.accept());
-    const row = page.locator(`text=UIDelete`).first();
+    const row = page.locator('div.group:has-text("UIDelete")').first();
     await row.hover();
     const deleteBtn = row.locator('button svg.lucide-trash-2').first();
     await deleteBtn.click();
@@ -138,7 +138,7 @@ test.describe("Automations", () => {
     await page.waitForSelector('text="UIToggle"');
 
     page.on("dialog", (dialog) => dialog.accept());
-    const row = page.locator('text=UIToggle').first();
+    const row = page.locator('div.group:has-text("UIToggle")').first();
     const zapBtn = row.locator('button svg.lucide-zap-off, button svg.lucide-zap').first();
     await zapBtn.click();
 

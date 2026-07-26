@@ -2,6 +2,7 @@ import type { ExecutionDependencies, AgentDispatch, RunRecord, NodeExecutionReco
 import type { CapabilityReport } from "../core/node-contract.js";
 import type { CredentialVault } from "../core/credential-vault.js";
 import type { EnvResolver } from "../core/env-resolver.js";
+import type { ArtifactStore } from "../api/artifacts.js";
 import { LocalAgent } from "./local-agent.js";
 
 export class AgentDispatcher implements ExecutionDependencies {
@@ -14,10 +15,10 @@ export class AgentDispatcher implements ExecutionDependencies {
 
   readonly now = () => new Date();
 
-  constructor(vault?: CredentialVault, envResolver?: EnvResolver) {
+  constructor(vault?: CredentialVault, envResolver?: EnvResolver, artifactStore?: ArtifactStore) {
     this.vault = vault ?? null;
     this.envResolver = envResolver ?? null;
-    this.registerAgent(new LocalAgent());
+    this.registerAgent(new LocalAgent(artifactStore));
   }
 
   setVault(vault: CredentialVault): void {

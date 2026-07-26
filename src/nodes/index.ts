@@ -21,3 +21,6 @@ import "./input-mouse-click.js";
 import "./input-mouse-move.js";
 import "./input-keyboard-type.js";
 import "./input-keyboard-key.js";
+import "./system-launch.js";
+import "./vision-window-list.js";
+import "./vision-window-screenshot.js";

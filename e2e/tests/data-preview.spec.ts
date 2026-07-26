@@ -74,9 +74,6 @@ test.describe("Data Inspection", () => {
   });
 
   test("UI: click on a run shows node execution list", async ({ page, testServer }) => {
-    await page.goto(testServer.url);
-    await page.waitForSelector("text=Automation Platform");
-
     const createResp = await page.request.post(`${testServer.url}/api/automations`, {
       data: { name: "UI Run Test", definition: MANUAL_DEFINITION },
     });
@@ -84,19 +81,20 @@ test.describe("Data Inspection", () => {
 
     await page.request.post(`${testServer.url}/api/automations/${automation.id}/run`, {});
 
-    const autoItem = page.locator("text=UI Run Test").first();
-    await autoItem.click();
-
-    await page.waitForTimeout(1000);
-
-    const runSection = page.locator("text=Runs").first();
-    await expect(runSection).toBeVisible();
-  });
-
-  test("UI: data preview shows when clicking node execution", async ({ page, testServer }) => {
     await page.goto(testServer.url);
     await page.waitForSelector("text=Automation Platform");
 
+    const autoItem = page.locator("text=UI Run Test").first();
+    await autoItem.click();
+
+    await page.waitForSelector("text=Runs", { timeout: 5000 });
+    const runButton = page.locator("button:has-text('success'), button:has-text('error'), button:has-text('manual')").first();
+    await runButton.click();
+
+    await expect(page.locator("text=Node Executions").first()).toBeVisible({ timeout: 5000 });
+  });
+
+  test("UI: data preview shows when clicking node execution", async ({ page, testServer }) => {
     const createResp = await page.request.post(`${testServer.url}/api/automations`, {
       data: { name: "Data Preview UI Test", definition: MANUAL_DEFINITION },
     });
@@ -104,15 +102,19 @@ test.describe("Data Inspection", () => {
 
     await page.request.post(`${testServer.url}/api/automations/${automation.id}/run`, {});
 
+    await page.goto(testServer.url);
+    await page.waitForSelector("text=Automation Platform");
+
     const autoItem = page.locator("text=Data Preview UI Test").first();
     await autoItem.click();
 
-    await page.waitForTimeout(1500);
+    await page.waitForSelector("text=Runs", { timeout: 5000 });
+    const runButton = page.locator("button:has-text('success'), button:has-text('error'), button:has-text('manual')").first();
+    await runButton.click();
 
-    const nodeExecHeader = page.locator("text=Node Executions").first();
-    await expect(nodeExecHeader).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("text=Node Executions").first()).toBeVisible({ timeout: 5000 });
 
-    const nodeRow = page.locator("[class*='text-gray-300']").first();
+    const nodeRow = page.locator("button:has-text('n1'), button:has-text('n2')").first();
     if (await nodeRow.isVisible()) {
       await nodeRow.click();
       await expect(page.locator("text=Data Preview").first()).toBeVisible({ timeout: 3000 });

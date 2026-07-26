@@ -66,6 +66,11 @@ export async function probeCapabilities(): Promise<CapabilityReport> {
     "scrot",
     "grim",
     "import",
+    "wmctrl",
+    "xwininfo",
+    "hyprctl",
+    "swaymsg",
+    "slurp",
   ];
 
   const tools: string[] = [];

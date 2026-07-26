@@ -43,7 +43,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Max-Age": "86400",
 };
 
-const UI_DIST = resolve(import.meta.dir, "../../ui/dist");
+const UI_DIST_DEFAULT = resolve(import.meta.dir, "../../ui/dist");
 
 const START_TIME = Date.now();
 
@@ -94,14 +94,16 @@ export function createServer(options: {
   host: string;
   db: AppDatabase;
   config: AppConfig;
+  uiDist?: string;
 }): ServerResult {
   const { port, host, db, config } = options;
+  const UI_DIST = options.uiDist ?? process.env.AP_UI_DIST ?? UI_DIST_DEFAULT;
 
   const hub = new WssHub(db.db);
-  const fleetDispatcher = new FleetDispatcher(hub);
   const artifactStore = new ArtifactStore(config.dataDir, db.db);
   const vault = new CredentialVault(db);
   const envResolver = new EnvResolver(db, vault);
+  const fleetDispatcher = new FleetDispatcher(hub, vault, envResolver, artifactStore);
 
   mkdirSync(config.dataDir, { recursive: true });
 
@@ -143,7 +145,7 @@ export function createServer(options: {
         return json(info);
       }
 
-      if (pathname.startsWith("/api/")) {
+      if (pathname.startsWith("/api/") || pathname.startsWith("/hooks/")) {
         const result = handleApiRoute(db.db, fleetDispatcher, req, fleetDispatcher, hub, artifactStore, db, vault, envResolver);
         if (result !== null) return result;
         return json({ error: "Not found" }, 404);

@@ -103,6 +103,18 @@ export interface PortSchema {
   type: "item" | "artifact";
 }
 
+export interface AgentResponse {
+  id: string;
+  name: string;
+  isLocal: boolean;
+  tags: string[];
+  capabilities: Record<string, unknown>;
+  version: string;
+  status: "online" | "offline";
+  lastSeenAt: string | null;
+  enrolledAt: string;
+}
+
 export interface PaletteNodeType {
   type: string;
   displayName: string;

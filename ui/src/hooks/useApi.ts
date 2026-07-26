@@ -76,6 +76,21 @@ export function runAutomation(
   });
 }
 
+export function runNode(
+  automationId: string,
+  nodeId: string,
+  opts?: { fresh?: boolean; inputData?: any[] },
+): Promise<RunResponse> {
+  const body: any = {};
+  if (opts?.fresh) body.fresh = true;
+  if (opts?.inputData) body.inputData = opts.inputData;
+  return fetchJson(`/api/automations/${automationId}/run-node/${nodeId}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 export function listRuns(automationId?: string): Promise<RunResponse[]> {
   const params = automationId ? `?automationId=${automationId}` : "";
   return fetchJson(`/api/runs${params}`);

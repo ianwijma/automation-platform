@@ -23,6 +23,27 @@ A self-hosted, AI-enabled Linux automation platform with a visual editor, fleet 
 - Linux (primary target; macOS works for development)
 - Node.js >= 18 (for UI build)
 
+### System Dependencies
+
+Vision and input nodes depend on system tools. Install what you need:
+
+```bash
+# Debian/Ubuntu
+sudo apt install xdotool maim tesseract-ocr imagemagick wmctrl x11-utils
+
+# Arch Linux
+sudo pacman -S xdotool maim tesseract imagemagick wmctrl xorg-xwininfo
+
+# Wayland (additionally)
+# For Hyprland: hyprctl is included
+# For Sway: swaymsg is included
+# Screenshot: pacman -S grim  (Arch) / apt install grim  (Debian sid+)
+# Region select: pacman -S slurp
+# Input: install ydotool — https://github.com/ReimuNotMoe/ydotool
+```
+
+Run `ap doctor` to check which tools are available and get targeted install hints.
+
 ### Install & Run
 
 ```bash
@@ -97,9 +118,9 @@ cargo tauri build  # produces AppImage
 |----------|-------|
 | **Triggers** | manual, schedule (cron), webhook, polling |
 | **Logic** | if, switch, merge, loop, delay, set, code |
-| **System** | command |
+| **System** | command, launch, read file, write file, HTTP request |
 | **State** | get, set |
-| **Vision** | screenshot, ocr, image.detect, llm |
+| **Vision** | screenshot, OCR, image.detect, LLM vision, window list, window screenshot |
 | **Input** | mouse.click, mouse.move, keyboard.type, keyboard.key |
 | **Error** | throw |
 
@@ -117,9 +138,10 @@ Environment variables:
 ## Testing
 
 ```bash
-bun test              # Run all tests
-bun test test/fleet   # Run specific test file
-bun run typecheck     # TypeScript type checking
+bun test src/           # Run unit tests (530+ tests)
+bunx playwright test    # Run E2E tests (118+ tests)
+bun run build:ui        # Build the UI
+ap doctor               # Check system capability status
 ```
 
 ## Project Structure
@@ -135,6 +157,57 @@ src/
 ui/            # React + React Flow + Tailwind CSS v4 editor
 desktop/       # Tauri v2 desktop shell
 test/          # Test files
+```
+
+## Plugins
+
+Custom node types can be loaded from a plugins directory. Each plugin has an `ap-plugin.json` manifest and an ES module entry point.
+
+```bash
+ap serve --plugins-dir /path/to/plugins
+```
+
+Plugin structure:
+
+```
+my-plugin/
+  ap-plugin.json    # manifest
+  index.js          # ES module exporting nodes
+```
+
+Example `ap-plugin.json`:
+
+```json
+{
+  "name": "my-plugin",
+  "version": "1.0.0",
+  "main": "index.js",
+  "permissions": { "fs": false, "net": false, "env": false },
+  "nodes": [{
+    "type": "custom.greet",
+    "version": 1,
+    "displayName": "Greet",
+    "category": "execution",
+    "sideEffecting": false,
+    "inputs": [{ "name": "in", "type": "item" }],
+    "outputs": [{ "name": "out", "type": "item" }],
+    "paramsSchema": { "name": { "type": "string" } }
+  }]
+}
+```
+
+Example `index.js`:
+
+```js
+export const nodes = {
+  "custom.greet": async (ctx) => {
+    const name = ctx.params?.name || "World";
+    return [{ json: { greeting: `Hello, ${name}!` } }];
+  },
+  "custom.greet:simulate": async (ctx) => {
+    return { description: "Greet", wouldDo: `Would greet ${ctx.params?.name || "World"}` };
+  },
+};
 ```
 
 ## License

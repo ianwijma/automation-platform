@@ -11,6 +11,7 @@ import type {
   AutomationVersionResponse,
   AiDiff,
   AiSettingsResponse,
+  AgentResponse,
 } from "./types";
 import {
   definitionToFlow,
@@ -44,6 +45,7 @@ interface AppStore {
 
   runs: RunResponse[];
   currentRunId: string | null;
+  selectedNodeExecId: string | null;
   nodeExecutions: Record<string, NodeExecutionResponse[]>;
 
   versions: AutomationVersionResponse[];
@@ -58,12 +60,14 @@ interface AppStore {
 
   aiSettings: AiSettingsResponse | null;
 
+  agents: AgentResponse[];
   settingsOpen: boolean;
   saveError: string | null;
   actionError: string | null;
 
   fetchSystemInfo: () => Promise<void>;
   fetchAutomations: () => Promise<void>;
+  fetchAgents: () => Promise<void>;
   selectAutomation: (id: string | null) => Promise<void>;
   createAutomation: (name: string) => Promise<void>;
   deleteAutomation: (id: string) => Promise<void>;
@@ -97,6 +101,8 @@ interface AppStore {
   fetchRuns: () => Promise<void>;
   fetchNodeExecutions: (runId: string) => Promise<void>;
   setCurrentRunId: (id: string | null) => void;
+  executeNode: (nodeId: string, fresh?: boolean, inputData?: any[]) => Promise<void>;
+  setSelectedNodeExecId: (id: string | null) => void;
 
   fetchVersions: () => Promise<void>;
   setPreviewVersion: (version: AutomationVersionResponse | null) => void;
@@ -140,6 +146,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   runs: [],
   currentRunId: null,
+  selectedNodeExecId: null,
   nodeExecutions: {},
 
   versions: [],
@@ -153,6 +160,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   showVersionHistory: false,
 
   aiSettings: null,
+
+  agents: [],
 
   settingsOpen: false,
   saveError: null,
@@ -171,6 +180,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const automations = await api.listAutomations();
       set({ automations });
+    } catch {
+      /* ignore */
+    }
+  },
+
+  fetchAgents: async () => {
+    try {
+      const res = await fetch("/api/agents");
+      if (res.ok) {
+        const agents: AgentResponse[] = await res.json();
+        set({ agents });
+      }
     } catch {
       /* ignore */
     }
@@ -402,6 +423,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setCurrentRunId: (id) => set({ currentRunId: id }),
+
+  executeNode: async (nodeId, fresh = false, inputData?) => {
+    const { currentAutomationId, currentDefinition, saveAutomation } = get();
+    if (!currentAutomationId || !currentDefinition) return;
+
+    await saveAutomation();
+
+    try {
+      const run = await api.runNode(currentAutomationId, nodeId, { fresh, inputData });
+      set((s) => ({
+        runs: [run, ...s.runs],
+        currentRunId: run.id,
+        selectedNodeExecId: null,
+      }));
+      const { fetchNodeExecutions } = get();
+      await fetchNodeExecutions(run.id);
+      const { nodeExecutions } = get();
+      const execs = nodeExecutions[run.id] ?? [];
+      const targetExec = execs.find((e: any) => e.nodeId === nodeId);
+      if (targetExec) {
+        set({ selectedNodeExecId: targetExec.id });
+      }
+    } catch {}
+  },
+
+  setSelectedNodeExecId: (id) => set({ selectedNodeExecId: id }),
 
   fetchVersions: async () => {
     const { currentAutomationId } = get();

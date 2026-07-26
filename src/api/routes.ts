@@ -25,6 +25,7 @@ import { handleAiChat, handleAiApply, handleAiModels } from "./ai-routes.js";
 import { handleGetSettings, handleUpdateSettings } from "./settings-routes.js";
 import { exportAutomation, importAutomation } from "./export-import.js";
 import { handleWebhookRequest } from "./webhooks.js";
+import { runNode } from "./run-node.js";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -225,6 +226,26 @@ const routes: Route[] = [
     pattern: "/api/runs/:id/cancel",
     handler: (ctx, _req, params) => {
       return json({ error: "Not yet implemented" }, 501);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/automations/:id/run-node/:nodeId",
+    handler: async (ctx, req, params) => {
+      try {
+        let fresh = false;
+        let inputData;
+        try {
+          const body = await req.json();
+          fresh = body?.fresh === true;
+          inputData = body?.inputData;
+        } catch {}
+        const run = await runNode(ctx.db, ctx.dispatcher, params.id, params.nodeId, { fresh, inputData });
+        if (!run) return json({ error: "Automation or node not found" }, 404);
+        return json(run, 201);
+      } catch {
+        return json({ error: "Node execution failed" }, 500);
+      }
     },
   },
   {

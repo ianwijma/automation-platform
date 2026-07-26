@@ -2,6 +2,7 @@ import type { ExecutionDependencies, AgentDispatch, RunRecord, NodeExecutionReco
 import type { CapabilityReport } from "../core/node-contract.js";
 import type { CredentialVault } from "../core/credential-vault.js";
 import type { EnvResolver } from "../core/env-resolver.js";
+import type { ArtifactStore } from "../api/artifacts.js";
 import { AgentDispatcher } from "./dispatcher.js";
 import { RemoteAgent } from "./remote-agent.js";
 import type { WssHub } from "../api/wss-hub.js";
@@ -20,8 +21,8 @@ export class FleetDispatcher extends AgentDispatcher implements ExecutionDepende
   private lastAgentForAutomation = new Map<string, string>();
   private hub: WssHub | null = null;
 
-  constructor(hub?: WssHub, vault?: CredentialVault, envResolver?: EnvResolver) {
-    super(vault, envResolver);
+  constructor(hub?: WssHub, vault?: CredentialVault, envResolver?: EnvResolver, artifactStore?: ArtifactStore) {
+    super(vault, envResolver, artifactStore);
     this.hub = hub ?? null;
 
     if (hub) {

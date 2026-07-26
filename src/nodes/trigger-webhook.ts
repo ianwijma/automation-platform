@@ -26,7 +26,7 @@ const definition: NodeDefinition<WebhookParams> = {
         json: {
           triggeredAt: ctx.now.toISOString(),
           webhookPath: ctx.params.path,
-          method: ctx.params.method,
+          method: ctx.params.method ?? "POST",
           body: webhookBody,
         },
       },

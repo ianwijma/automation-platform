@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface KeyboardKeyParams {
   key: string;
@@ -32,23 +33,13 @@ const definition: NodeDefinition<KeyboardKeyParams> = {
     const inputMethod = detectInputMethod();
 
     if (inputMethod === "xdotool") {
-      const proc = Bun.spawn(["xdotool", "key", key], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["xdotool", "key", key] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`xdotool key failed: ${stderr}`);
       }
     } else if (inputMethod === "ydotool") {
-      const proc = Bun.spawn(["ydotool", "key", key], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["ydotool", "key", key] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`ydotool key failed: ${stderr}`);
       }
     } else {

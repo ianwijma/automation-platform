@@ -1,11 +1,10 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { randomUUID } from "node:crypto";
 
 interface ScreenshotParams {
   display?: "current" | "select";
 }
-
-const SCREENSHOT_PATH = "/tmp/ap_screenshot.png";
 
 async function tryCommand(cmd: string[]): Promise<{ ok: boolean; stderr: string }> {
   try {
@@ -46,15 +45,16 @@ const definition: NodeDefinition<ScreenshotParams> = {
 
   async run(ctx: RunContext<ScreenshotParams>): Promise<NodeItem[]> {
     const displayServer = detectDisplayServer();
+    const screenshotPath = `/tmp/ap_screenshot_${ctx.runId}_${ctx.nodeId}.png`;
 
     let captured = false;
     let lastError = "";
 
     if (displayServer === "x11") {
       const attempts = [
-        ["maim", SCREENSHOT_PATH],
-        ["scrot", SCREENSHOT_PATH],
-        ["import", "-window", "root", SCREENSHOT_PATH],
+        ["maim", screenshotPath],
+        ["scrot", screenshotPath],
+        ["import", "-window", "root", screenshotPath],
       ];
       for (const cmd of attempts) {
         const result = await tryCommand(cmd);
@@ -65,7 +65,7 @@ const definition: NodeDefinition<ScreenshotParams> = {
         lastError = result.stderr;
       }
     } else if (displayServer === "wayland") {
-      const result = await tryCommand(["grim", SCREENSHOT_PATH]);
+      const result = await tryCommand(["grim", screenshotPath]);
       if (result.ok) captured = true;
       else lastError = result.stderr;
     }
@@ -76,7 +76,7 @@ const definition: NodeDefinition<ScreenshotParams> = {
       );
     }
 
-    const file = Bun.file(SCREENSHOT_PATH);
+    const file = Bun.file(screenshotPath);
     const exists = await file.exists();
     if (!exists) {
       throw new Error("Screenshot file was not created");
@@ -84,12 +84,11 @@ const definition: NodeDefinition<ScreenshotParams> = {
 
     const buffer = await file.arrayBuffer();
     const size = buffer.byteLength;
-    const base64 = Buffer.from(buffer).toString("base64");
 
     let width = 0;
     let height = 0;
     try {
-      const identifyProc = Bun.spawn(["identify", "-format", "%w %h", SCREENSHOT_PATH], {
+      const identifyProc = Bun.spawn(["identify", "-format", "%w %h", screenshotPath], {
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -102,23 +101,28 @@ const definition: NodeDefinition<ScreenshotParams> = {
       }
     } catch {}
 
-    return [
-      {
-        json: {
-          filename: SCREENSHOT_PATH,
-          width,
-          height,
-        },
-        binary: {
-          screenshot: {
-            $artifact: "pending",
-            mime: "image/png",
-            size,
-            name: "screenshot.png",
-          },
+    const item: NodeItem = {
+      json: {
+        filename: screenshotPath,
+        width,
+        height,
+      },
+      binary: {
+        screenshot: {
+          $artifact: "pending",
+          mime: "image/png",
+          size,
+          name: "screenshot.png",
         },
       },
-    ];
+    };
+
+    if (ctx.artifacts) {
+      const ref = await ctx.artifacts.store(buffer, "image/png", "screenshot.png");
+      item.binary!.screenshot = ref;
+    }
+
+    return [item];
   },
 
   async simulate(_ctx: RunContext<ScreenshotParams>): Promise<SimulationReport> {

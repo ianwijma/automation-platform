@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface OcrParams {
   imagePath: string;
@@ -22,18 +23,14 @@ const definition: NodeDefinition<OcrParams> = {
   },
 
   async run(ctx: RunContext<OcrParams>): Promise<NodeItem[]> {
-    const { imagePath, lang, engine } = ctx.params;
-    const effectiveEngine = engine ?? "tesseract";
+    const { imagePath } = ctx.params;
+    const lang = ctx.params.lang ?? "eng";
+    const engine = ctx.params.engine ?? "tesseract";
 
-    if (effectiveEngine === "tesseract") {
-      const proc = Bun.spawn(["tesseract", imagePath, "stdout", "-l", lang], {
-        stdout: "pipe",
-        stderr: "pipe",
+    if (engine === "tesseract") {
+      const { exitCode, stdout, stderr } = await spawnAndCapture({
+        cmd: ["tesseract", imagePath, "stdout", "-l", lang],
       });
-
-      const exitCode = await proc.exited;
-      const stdout = await new Response(proc.stdout).text();
-      const stderr = await new Response(proc.stderr).text();
 
       if (exitCode !== 0) {
         throw new Error(`Tesseract failed (exit ${exitCode}): ${stderr}`);
@@ -53,7 +50,7 @@ const definition: NodeDefinition<OcrParams> = {
       ];
     }
 
-    if (effectiveEngine === "wasm") {
+    if (engine === "wasm") {
       try {
         // @ts-expect-error optional dependency
       const tesseractjs = await import("tesseract.js");
@@ -74,14 +71,15 @@ const definition: NodeDefinition<OcrParams> = {
       }
     }
 
-    throw new Error(`Unknown OCR engine: ${effectiveEngine}`);
+    throw new Error(`Unknown OCR engine: ${engine}`);
   },
 
   async simulate(ctx: RunContext<OcrParams>): Promise<SimulationReport> {
     const engine = ctx.params.engine ?? "tesseract";
+    const lang = ctx.params.lang ?? "eng";
     return {
       description: "OCR",
-      wouldDo: `would OCR image with ${engine}`,
+      wouldDo: `would OCR image with ${engine} (lang: ${lang})`,
     };
   },
 };

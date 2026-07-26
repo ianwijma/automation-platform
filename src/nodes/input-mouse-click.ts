@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface MouseClickParams {
   x: number;
@@ -40,31 +41,24 @@ const definition: NodeDefinition<MouseClickParams> = {
   },
 
   async run(ctx: RunContext<MouseClickParams>): Promise<NodeItem[]> {
-    const { x, y, button, clickCount } = ctx.params;
+    const x = ctx.params.x;
+    const y = ctx.params.y;
+    const button = ctx.params.button ?? "left";
+    const clickCount = ctx.params.clickCount ?? 1;
     const inputMethod = detectInputMethod();
 
     if (inputMethod === "xdotool") {
       const clickCmd = clickCount > 1 ? `xdotool click --repeat ${clickCount} ${button}` : `xdotool click ${button}`;
       const cmd = `xdotool mousemove ${x} ${y} && ${clickCmd}`;
-      const proc = Bun.spawn(["bash", "-c", cmd], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["bash", "-c", cmd] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`xdotool mouse click failed: ${stderr}`);
       }
     } else if (inputMethod === "ydotool") {
       const waylandButton = BUTTON_MAP_WAYLAND[button] ?? "0x110";
       const cmd = `ydotool mousemove --absolute ${x} ${y} && ydotool click ${waylandButton}`;
-      const proc = Bun.spawn(["bash", "-c", cmd], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["bash", "-c", cmd] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`ydotool mouse click failed: ${stderr}`);
       }
     } else {

@@ -1,8 +1,19 @@
 import type { AgentDispatch, StateAccess } from "../core/execution-engine.js";
-import type { NodeDefinition, NodeItem, RunContext } from "../core/node-contract.js";
+import type { NodeDefinition, NodeItem, RunContext, ArtifactStoreHandle as ArtifactStoreHandleType } from "../core/node-contract.js";
+import type { ArtifactStore } from "../api/artifacts.js";
+import { ArtifactStoreHandle } from "../core/artifact-handle.js";
 
 export class LocalAgent implements AgentDispatch {
   agentId = "local";
+  private artifactStore?: ArtifactStore;
+
+  constructor(artifactStore?: ArtifactStore) {
+    this.artifactStore = artifactStore;
+  }
+
+  setArtifactStore(store: ArtifactStore): void {
+    this.artifactStore = store;
+  }
 
   async send(
     _nodeExecId: string,
@@ -30,6 +41,10 @@ export class LocalAgent implements AgentDispatch {
       runId,
       dryRun,
     };
+
+    if (this.artifactStore) {
+      ctx.artifacts = new ArtifactStoreHandle(this.artifactStore, runId);
+    }
 
     const start = Date.now();
 

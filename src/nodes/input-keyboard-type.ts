@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface KeyboardTypeParams {
   text: string;
@@ -30,27 +31,18 @@ const definition: NodeDefinition<KeyboardTypeParams> = {
   },
 
   async run(ctx: RunContext<KeyboardTypeParams>): Promise<NodeItem[]> {
-    const { text, delay } = ctx.params;
+    const { text } = ctx.params;
+    const delay = ctx.params.delay ?? 12;
     const inputMethod = detectInputMethod();
 
     if (inputMethod === "xdotool") {
-      const proc = Bun.spawn(["xdotool", "type", "--delay", String(delay), text], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["xdotool", "type", "--delay", String(delay), text] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`xdotool type failed: ${stderr}`);
       }
     } else if (inputMethod === "ydotool") {
-      const proc = Bun.spawn(["ydotool", "type", text], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
+      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["ydotool", "type", text] });
       if (exitCode !== 0) {
-        const stderr = await new Response(proc.stderr).text();
         throw new Error(`ydotool type failed: ${stderr}`);
       }
     } else {

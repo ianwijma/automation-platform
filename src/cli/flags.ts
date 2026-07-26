@@ -3,6 +3,7 @@ export function parseCliFlags(args: string[]): {
   noBrowser?: boolean;
   publicUrl?: string;
   token?: string;
+  pluginsDir?: string;
   rest: string[];
 } {
   const result: {
@@ -10,6 +11,7 @@ export function parseCliFlags(args: string[]): {
     noBrowser?: boolean;
     publicUrl?: string;
     token?: string;
+    pluginsDir?: string;
     rest: string[];
   } = { rest: [] };
 
@@ -26,6 +28,8 @@ export function parseCliFlags(args: string[]): {
       result.publicUrl = args[++i];
     } else if (arg === "--token") {
       result.token = args[++i];
+    } else if (arg === "--plugins-dir") {
+      result.pluginsDir = args[++i];
     } else {
       result.rest.push(arg);
     }

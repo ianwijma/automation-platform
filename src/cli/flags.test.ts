@@ -56,7 +56,20 @@ describe("parseCliFlags", () => {
     expect(result.noBrowser).toBeUndefined();
     expect(result.publicUrl).toBeUndefined();
     expect(result.token).toBeUndefined();
+    expect(result.pluginsDir).toBeUndefined();
     expect(result.rest).toEqual([]);
+  });
+
+  test("parses --plugins-dir flag", () => {
+    const result = parseCliFlags(["--plugins-dir", "/opt/ap/plugins"]);
+    expect(result.pluginsDir).toBe("/opt/ap/plugins");
+  });
+
+  test("combines --plugins-dir with other flags", () => {
+    const result = parseCliFlags(["serve", "--plugins-dir", "/plugins", "--port", "9090"]);
+    expect(result.pluginsDir).toBe("/plugins");
+    expect(result.port).toBe(9090);
+    expect(result.rest).toEqual(["serve"]);
   });
 
   test("unknown flags pass through to rest", () => {

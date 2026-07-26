@@ -1,5 +1,6 @@
 import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface CommandParams {
   command: string;
@@ -23,15 +24,10 @@ const definition: NodeDefinition<CommandParams> = {
     const command = ctx.params.command;
     const shell = ctx.params.shell ?? "/bin/bash";
 
-    const proc = Bun.spawn([shell, "-c", command], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const { exitCode, stdout, stderr } = await spawnAndCapture({
+      cmd: [shell, "-c", command],
       env: { ...ctx.env },
     });
-
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
 
     const result: Record<string, unknown> = { stdout, stderr, exitCode };
 

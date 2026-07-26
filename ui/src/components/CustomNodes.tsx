@@ -4,6 +4,7 @@ import type { AutomationNodeData } from "../types";
 import { CATEGORY_COLORS, CATEGORY_TEXT, CATEGORY_BORDER } from "../types";
 import { getPalettePorts } from "./NodePalette";
 import { Monitor, Server, Tag, Zap, Ban } from "lucide-react";
+import { useAppStore } from "../store";
 
 const TARGET_ICONS: Record<string, typeof Monitor> = {
   local: Monitor,
@@ -12,7 +13,7 @@ const TARGET_ICONS: Record<string, typeof Monitor> = {
   any: Zap,
 };
 
-function TargetBadge({ kind, value }: { kind: string; value?: string }) {
+function TargetBadge({ kind, value, offline }: { kind: string; value?: string; offline?: boolean }) {
   const Icon = TARGET_ICONS[kind] ?? Monitor;
   const label =
     kind === "local"
@@ -22,6 +23,15 @@ function TargetBadge({ kind, value }: { kind: string; value?: string }) {
         : kind === "tag"
           ? (value ?? "tag")
           : "any";
+
+  if (offline) {
+    return (
+      <div className="flex items-center gap-1 rounded bg-red-900/60 px-1.5 py-0.5 text-[10px] text-red-300 border border-red-500/40">
+        <Ban className="h-2.5 w-2.5" />
+        <span>{label}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400">
@@ -38,6 +48,35 @@ function AutomationNodeComponent(props: NodeProps) {
   const color = CATEGORY_COLORS[category] ?? "#6b7280";
   const borderClass = CATEGORY_BORDER[category] ?? "border-gray-500/60";
   const textClass = CATEGORY_TEXT[category] ?? "text-gray-400";
+
+  const dryRun = useAppStore((s) => s.dryRun);
+  const nodeExecutions = useAppStore((s) => s.nodeExecutions);
+  const currentRunId = useAppStore((s) => s.currentRunId);
+  const agents = useAppStore((s) => s.agents);
+
+  const nodeExecs = nodeExecutions[props.id] ?? [];
+  const latestExec = nodeExecs[0];
+  const isSimulated = dryRun || (currentRunId && latestExec?.simulated === true);
+
+  const target = data.target as { kind: string; value?: string };
+  const isTargetOffline =
+    !data.disabled &&
+    target.kind !== "local" &&
+    (() => {
+      if (target.kind === "machine") {
+        const agent = agents.find((a) => a.id === target.value || a.name === target.value);
+        return !agent || agent.status === "offline";
+      }
+      if (target.kind === "tag") {
+        const matching = agents.filter((a) => a.tags.includes(target.value ?? ""));
+        return matching.length === 0 || matching.every((a) => a.status === "offline");
+      }
+      if (target.kind === "any") {
+        const online = agents.filter((a) => a.status === "online" && !a.isLocal);
+        return online.length === 0;
+      }
+      return false;
+    })();
 
   const ports = getPalettePorts(data.nodeType);
   const handles = [];
@@ -88,8 +127,6 @@ function AutomationNodeComponent(props: NodeProps) {
     );
   }
 
-  const target = data.target as { kind: string; value?: string };
-
   return (
     <div
       className={`min-w-[160px] relative rounded-lg border ${borderClass} bg-gray-900 shadow-lg transition-shadow ${
@@ -105,7 +142,7 @@ function AutomationNodeComponent(props: NodeProps) {
           <span className={`text-xs font-semibold uppercase tracking-wider ${textClass}`}>
             {category}
           </span>
-          <TargetBadge kind={target.kind} value={target.value} />
+          <TargetBadge kind={target.kind} value={target.value} offline={isTargetOffline} />
         </div>
         <div className="mt-1.5 text-sm font-medium text-gray-100 leading-tight">
           {data.name}
@@ -118,6 +155,21 @@ function AutomationNodeComponent(props: NodeProps) {
       {data.disabled && (
         <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-gray-950/60">
           <Ban className="h-5 w-5 text-gray-400" />
+        </div>
+      )}
+
+      {isSimulated && !data.disabled && (
+        <div className="absolute inset-0 rounded-lg overflow-hidden pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(245,158,11,0.15) 4px, rgba(245,158,11,0.15) 5px)",
+            }}
+          />
+          <div className="absolute top-1 right-1 rounded bg-amber-500/80 px-1 py-0.5 text-[8px] font-bold uppercase text-black">
+            sim
+          </div>
         </div>
       )}
 

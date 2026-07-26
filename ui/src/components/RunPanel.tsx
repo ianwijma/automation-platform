@@ -104,6 +104,11 @@ function NodeExecutionRow({
           sim
         </span>
       )}
+      {exec.pinned && (
+        <span className="rounded bg-blue-500/20 px-1 py-0.5 text-[9px] text-blue-400">
+          cached
+        </span>
+      )}
       {exec.error && (
         <span className="max-w-[120px] truncate text-red-400" title={exec.error}>
           {exec.error}
@@ -122,7 +127,8 @@ export function RunPanel() {
   const fetchRuns = useAppStore((s) => s.fetchRuns);
   const currentAutomationId = useAppStore((s) => s.currentAutomationId);
 
-  const [selectedNodeExecId, setSelectedNodeExecId] = useState<string | null>(null);
+  const selectedNodeExecId = useAppStore((s) => s.selectedNodeExecId);
+  const setSelectedNodeExecId = useAppStore((s) => s.setSelectedNodeExecId);
   const [pinnedPreview, setPinnedPreview] = useState(false);
 
   const currentRun = runs.find((r) => r.id === currentRunId);

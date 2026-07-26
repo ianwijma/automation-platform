@@ -53,7 +53,7 @@ test.describe("AI Assistant", () => {
     const aiButton = page.locator("button:has-text('AI')");
     await aiButton.click();
 
-    await expect(page.locator("text=AI Assistant")).toBeVisible();
+    await expect(page.locator("span:text-is('AI Assistant')")).toBeVisible();
     await expect(page.locator('input[placeholder="Ask the AI assistant..."]')).toBeVisible();
   });
 
@@ -67,7 +67,7 @@ test.describe("AI Assistant", () => {
 
     const aiButton = page.locator("button:has-text('AI')");
     await aiButton.click();
-    await expect(page.locator("text=AI Assistant")).toBeVisible();
+    await expect(page.locator("span:text-is('AI Assistant')")).toBeVisible();
 
     const input = page.locator('input[placeholder="Ask the AI assistant..."]');
     await input.fill("test message");
