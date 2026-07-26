@@ -5,12 +5,32 @@ export interface AutomationTarget {
   value?: string;
 }
 
+export interface ActionTarget {
+  kind: "screen" | "window" | "region" | "file" | "none";
+  display?: string;
+  monitor?: number;
+  windowId?: string;
+  windowTitle?: string;
+  appId?: string;
+  pid?: number;
+  region?: { x: number; y: number; width: number; height: number };
+}
+
+export const ACTION_TARGET_LABELS: Record<ActionTarget["kind"], string> = {
+  screen: "Screen",
+  window: "Window",
+  region: "Region",
+  file: "File",
+  none: "\u2014",
+};
+
 export interface ApiAutomationNode {
   id: string;
   type: string;
   typeVersion: number;
   name: string;
   target: AutomationTarget;
+  actionTarget?: ActionTarget;
   params: Record<string, unknown>;
   credentials?: { type: string; name: string } | null;
   retry?: { attempts: number; backoffSec: number[] };
@@ -131,6 +151,7 @@ export interface AutomationNodeData {
   category: string;
   name: string;
   target: AutomationTarget;
+  actionTarget?: ActionTarget;
   params: Record<string, unknown>;
   credentials?: { type: string; name: string } | null;
   retry?: { attempts: number; backoffSec: number[] };

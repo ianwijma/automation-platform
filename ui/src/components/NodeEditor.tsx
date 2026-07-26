@@ -1,15 +1,23 @@
 import { useState } from "react";
 import { useAppStore } from "../store";
-import type { AutomationTarget } from "../types";
+import type { AutomationTarget, ActionTarget } from "../types";
 import { CATEGORY_COLORS, CATEGORY_TEXT } from "../types";
 import { findPaletteNode } from "./NodePalette";
-import { Trash2, Power, Monitor, Server, Tag, Zap, Play, Loader2, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
+import { Trash2, Power, Monitor, Server, Tag, Zap, Play, Loader2, RotateCcw, ChevronDown, ChevronRight, ScreenShare, AppWindow, Square, File } from "lucide-react";
 
 const TARGET_OPTIONS: { kind: AutomationTarget["kind"]; icon: typeof Monitor; label: string }[] = [
   { kind: "local", icon: Monitor, label: "Local" },
   { kind: "machine", icon: Server, label: "Machine" },
   { kind: "tag", icon: Tag, label: "Tag" },
   { kind: "any", icon: Zap, label: "Any" },
+];
+
+const ACTION_OPTIONS: { kind: ActionTarget["kind"]; icon: typeof ScreenShare; label: string }[] = [
+  { kind: "none", icon: Square, label: "N/A" },
+  { kind: "screen", icon: ScreenShare, label: "Screen" },
+  { kind: "window", icon: AppWindow, label: "Window" },
+  { kind: "region", icon: Square, label: "Region" },
+  { kind: "file", icon: File, label: "File" },
 ];
 
 function ExpressionInput({
@@ -204,6 +212,22 @@ export function NodeEditor() {
     });
   };
 
+  const handleActionTargetKindChange = (kind: ActionTarget["kind"]) => {
+    const newActionTarget: ActionTarget = { kind };
+    if (kind === "screen") newActionTarget.display = "current";
+    if (kind === "window") { newActionTarget.windowTitle = ""; newActionTarget.appId = ""; }
+    if (kind === "region") newActionTarget.region = { x: 0, y: 0, width: 800, height: 600 };
+    if (kind === "none") updateNodeData(selectedNode.id, { actionTarget: undefined });
+    else updateNodeData(selectedNode.id, { actionTarget: newActionTarget });
+  };
+
+  const handleActionTargetFieldChange = (field: string, value: unknown) => {
+    const current = (data.actionTarget as ActionTarget | undefined) ?? { kind: "screen" };
+    updateNodeData(selectedNode.id, { actionTarget: { ...current, [field]: value } });
+  };
+
+  const showActionTarget = ["vision", "input"].includes(category);
+
   const handleParamChange = (key: string, value: unknown) => {
     updateNodeData(selectedNode.id, {
       params: { ...(data.params as Record<string, unknown>), [key]: value },
@@ -247,7 +271,7 @@ export function NodeEditor() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-400">Target</label>
+          <label className="text-[11px] font-medium text-gray-400">Runs on</label>
           <div className="flex gap-1">
             {TARGET_OPTIONS.map((opt) => {
               const Icon = opt.icon;
@@ -283,6 +307,122 @@ export function NodeEditor() {
             />
           )}
         </div>
+
+        {showActionTarget && (
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-indigo-400">Acts on</label>
+            <div className="flex gap-1 flex-wrap">
+              {ACTION_OPTIONS.map((opt) => {
+                const Icon = opt.icon;
+                const currentKind = (data.actionTarget as ActionTarget | undefined)?.kind ?? "none";
+                return (
+                  <button
+                    key={opt.kind}
+                    onClick={() => handleActionTargetKindChange(opt.kind)}
+                    className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors ${
+                      currentKind === opt.kind
+                        ? "bg-indigo-500/20 text-indigo-400 border border-indigo-500/30"
+                        : "bg-gray-800 text-gray-500 hover:text-gray-300"
+                    }`}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            {data.actionTarget && (data.actionTarget as ActionTarget).kind !== "none" && (
+              <div className="mt-1 flex flex-col gap-1.5">
+                {(data.actionTarget as ActionTarget).kind === "screen" && (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Display</label>
+                      <input
+                        type="text"
+                        value={(data.actionTarget as ActionTarget).display ?? "current"}
+                        onChange={(e) => handleActionTargetFieldChange("display", e.target.value)}
+                        placeholder=":0 or DP-1 or current"
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Monitor #</label>
+                      <input
+                        type="number"
+                        value={(data.actionTarget as ActionTarget).monitor ?? 0}
+                        onChange={(e) => handleActionTargetFieldChange("monitor", Number(e.target.value))}
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                  </>
+                )}
+                {(data.actionTarget as ActionTarget).kind === "window" && (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Application</label>
+                      <input
+                        type="text"
+                        value={(data.actionTarget as ActionTarget).appId ?? ""}
+                        onChange={(e) => handleActionTargetFieldChange("appId", e.target.value)}
+                        placeholder="firefox, org.gnome.Terminal, etc."
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Window title (regex)</label>
+                      <input
+                        type="text"
+                        value={(data.actionTarget as ActionTarget).windowTitle ?? ""}
+                        onChange={(e) => handleActionTargetFieldChange("windowTitle", e.target.value)}
+                        placeholder="e.g. Firefox.*GitHub"
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Window ID (hex)</label>
+                      <input
+                        type="text"
+                        value={(data.actionTarget as ActionTarget).windowId ?? ""}
+                        onChange={(e) => handleActionTargetFieldChange("windowId", e.target.value)}
+                        placeholder="0x05600004"
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] text-gray-500">Process ID</label>
+                      <input
+                        type="number"
+                        value={(data.actionTarget as ActionTarget).pid ?? 0}
+                        onChange={(e) => handleActionTargetFieldChange("pid", Number(e.target.value))}
+                        className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                      />
+                    </div>
+                  </>
+                )}
+                {(data.actionTarget as ActionTarget).kind === "region" && (
+                  <>
+                    {(["x", "y", "width", "height"] as const).map((dim) => (
+                      <div key={dim} className="flex flex-col gap-1">
+                        <label className="text-[10px] text-gray-500 capitalize">{dim}</label>
+                        <input
+                          type="number"
+                          value={(data.actionTarget as ActionTarget).region?.[dim] ?? 0}
+                          onChange={(e) =>
+                            handleActionTargetFieldChange("region", {
+                              ...((data.actionTarget as ActionTarget).region ?? { x: 0, y: 0, width: 800, height: 600 }),
+                              [dim]: Number(e.target.value),
+                            })
+                          }
+                          className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1 text-xs text-gray-200 outline-none focus:border-gray-500"
+                        />
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="border-t border-gray-800 pt-2">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
