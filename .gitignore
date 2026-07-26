@@ -8,3 +8,7 @@ ui/node_modules/
 .data/
 .env
 ap
+*.heapsnapshot
+*.trace.json
+*.trace.json.gz
+desktop/src-tauri/target/
