@@ -12,3 +12,5 @@ ap
 *.trace.json
 *.trace.json.gz
 desktop/src-tauri/target/
+test-results/
+playwright-report/
