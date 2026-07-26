@@ -32,7 +32,7 @@ cd automation-platform
 
 # Install dependencies
 bun install
-cd ui && npm install && cd ..
+cd ui && bun install && cd ..
 
 # Run in development mode
 bun run dev

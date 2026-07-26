@@ -6,7 +6,7 @@ Thanks for your interest in contributing! This document covers the process and c
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/<you>/automation-platform.git`
-3. Install dependencies: `bun install && cd ui && npm install && cd ..`
+3. Install dependencies: `bun install && cd ui && bun install && cd ..`
 4. Create a feature branch: `git checkout -b feature/my-feature`
 5. Make your changes and add tests
 6. Run the test suite: `bun test`
@@ -20,7 +20,7 @@ bun run dev          # Start the platform in development mode
 bun test             # Run all tests
 bun run typecheck    # TypeScript type checking
 bun run build        # Build the single binary
-cd ui && npm run dev # Start the UI dev server (separate terminal)
+cd ui && bun run dev # Start the UI dev server (separate terminal)
 ```
 
 ## Code Conventions

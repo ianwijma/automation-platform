@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "bun run src/main.ts",
     "build": "bun run build.ts",
-    "build:ui": "cd ui && npm run build",
+    "build:ui": "cd ui && bun run build",
     "test": "bun test",
     "lint": "bun run lint.ts",
     "typecheck": "bunx tsc --noEmit"
