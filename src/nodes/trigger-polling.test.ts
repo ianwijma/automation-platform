@@ -44,7 +44,7 @@ describe("trigger.polling", () => {
     expect(result.length).toBe(1);
     expect(result[0].json.targetType).toBe("command");
     expect(result[0].json.changed).toBe(true);
-    expect(result[0].json.result.stdout).toContain("hello");
+    expect((result[0].json.result as any).stdout).toContain("hello");
   });
 
   test("run() detects change on second poll", async () => {

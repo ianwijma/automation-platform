@@ -1,9 +1,9 @@
 import type { Database } from "bun:sqlite";
-import type { RunRecord, RunOptions, NodeExecutionRecord } from "../core/execution-engine.js";
+import type { RunRecord, NodeExecutionRecord } from "../core/execution-engine.js";
+import type { NodeItem } from "../core/node-contract.js";
 import type { AgentDispatcher } from "../agent/dispatcher.js";
 import type { AutomationDefinition } from "../core/types.js";
 import { ExecutionEngine } from "../core/execution-engine.js";
-import { randomUUID } from "node:crypto";
 
 interface AutomationRow {
   id: string;
@@ -57,7 +57,7 @@ export async function rerunFromNode(
 
   const definition: AutomationDefinition = JSON.parse(definitionJson);
 
-  const pinData: Record<string, NodeExecutionRecord[]> = {};
+  const pinData: Record<string, NodeItem[]> = {};
   for (const ne of originalRun.nodeExecutions) {
     if (ne.nodeId === fromNodeId && ne.output) {
       pinData[ne.nodeId] = ne.output;
