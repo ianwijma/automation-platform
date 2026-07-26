@@ -5,6 +5,10 @@ import type { WssHub } from "./wss-hub.js";
 import type { ArtifactStore } from "./artifacts.js";
 import type { RunOptions } from "../core/execution-engine.js";
 import type { AutomationDefinition } from "../core/types.js";
+import type { CredentialVault } from "../core/credential-vault.js";
+import type { EnvResolver } from "../core/env-resolver.js";
+import type { AppDatabase } from "../db/database.js";
+import type { ImportRequest } from "../core/api-types.js";
 import {
   createAutomation,
   getAutomation,
@@ -16,6 +20,10 @@ import {
 } from "./automations.js";
 import { runAutomation, getRun, listRuns } from "./runs.js";
 import { listAgents, createJoinToken, triggerAgentUpdate, updateAgentTags } from "./agent-routes.js";
+import { listVersions, revertToVersion, labelVersion } from "./versions.js";
+import { handleAiChat, handleAiApply, handleAiModels } from "./ai-routes.js";
+import { handleGetSettings, handleUpdateSettings } from "./settings-routes.js";
+import { exportAutomation, importAutomation } from "./export-import.js";
 
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -54,10 +62,13 @@ function matchRoute(pathname: string, pattern: string): Record<string, string> |
 
 interface RouteContext {
   db: Database;
+  appDb: AppDatabase;
   dispatcher: AgentDispatcher;
   fleetDispatcher?: FleetDispatcher;
   hub?: WssHub;
   artifactStore?: ArtifactStore;
+  vault?: CredentialVault;
+  envResolver?: EnvResolver;
 }
 
 type RouteHandler = (
@@ -282,6 +293,214 @@ const routes: Route[] = [
       return json(meta, 201);
     },
   },
+  {
+    method: "POST",
+    pattern: "/api/credentials",
+    handler: async (ctx, req) => {
+      if (!ctx.vault) return json({ error: "Credential vault not available" }, 400);
+      try {
+        const body = await req.json() as { name: string; type: string; values: Record<string, string> };
+        if (!body.name || !body.type || !body.values) {
+          return json({ error: "name, type, and values are required" }, 400);
+        }
+        const id = ctx.vault.storeCredential(body.name, body.type, body.values);
+        const cred = ctx.vault.getCredential(id);
+        return json({ id, ...cred }, 201);
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/credentials",
+    handler: (ctx) => {
+      if (!ctx.vault) return json({ error: "Credential vault not available" }, 400);
+      const credentials = ctx.vault.listCredentials();
+      return json(credentials);
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/credentials/:id",
+    handler: (ctx, _req, params) => {
+      if (!ctx.vault) return json({ error: "Credential vault not available" }, 400);
+      try {
+        const cred = ctx.vault.getCredential(params.id);
+        return json({ id: params.id, ...cred });
+      } catch {
+        return json({ error: "Credential not found" }, 404);
+      }
+    },
+  },
+  {
+    method: "PUT",
+    pattern: "/api/credentials/:id",
+    handler: async (ctx, req, params) => {
+      if (!ctx.vault) return json({ error: "Credential vault not available" }, 400);
+      try {
+        const body = await req.json() as { values: Record<string, string> };
+        if (!body.values) return json({ error: "values are required" }, 400);
+        try {
+          ctx.vault.getCredential(params.id);
+        } catch {
+          return json({ error: "Credential not found" }, 404);
+        }
+        ctx.vault.updateCredential(params.id, body.values);
+        const cred = ctx.vault.getCredential(params.id);
+        return json({ id: params.id, ...cred });
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: "/api/credentials/:id",
+    handler: (ctx, _req, params) => {
+      if (!ctx.vault) return json({ error: "Credential vault not available" }, 400);
+      const deleted = ctx.vault.deleteCredential(params.id);
+      if (!deleted) return json({ error: "Credential not found" }, 404);
+      return json({ success: true });
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/env",
+    handler: (ctx, req) => {
+      if (!ctx.envResolver) return json({ error: "Env resolver not available" }, 400);
+      const url = new URL(req.url);
+      const scope = url.searchParams.get("scope") ?? undefined;
+      const scopeId = url.searchParams.has("scopeId") ? url.searchParams.get("scopeId") : undefined;
+      const vars = ctx.envResolver.listVars(scope, scopeId);
+      return json(vars);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/env",
+    handler: async (ctx, req) => {
+      if (!ctx.envResolver) return json({ error: "Env resolver not available" }, 400);
+      try {
+        const body = await req.json() as {
+          scope: "global" | "automation" | "machine";
+          scopeId: string | null;
+          key: string;
+          value: string;
+          isSecret: boolean;
+        };
+        if (!body.scope || !body.key || body.value === undefined) {
+          return json({ error: "scope, key, and value are required" }, 400);
+        }
+        ctx.envResolver.setVar(body.scope, body.scopeId ?? null, body.key, body.value, body.isSecret ?? false);
+        return json({ success: true }, 201);
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "DELETE",
+    pattern: "/api/env",
+    handler: (ctx, req) => {
+      if (!ctx.envResolver) return json({ error: "Env resolver not available" }, 400);
+      const url = new URL(req.url);
+      const scope = url.searchParams.get("scope");
+      const scopeId = url.searchParams.get("scopeId");
+      const key = url.searchParams.get("key");
+      if (!scope || !key) return json({ error: "scope and key are required" }, 400);
+      const deleted = ctx.envResolver.deleteVar(scope, scopeId, key);
+      if (!deleted) return json({ error: "Environment variable not found" }, 404);
+      return json({ success: true });
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/automations/:id/export",
+    handler: (ctx, _req, params) => {
+      const result = exportAutomation(ctx.db, params.id);
+      if (!result) return json({ error: "Automation not found" }, 404);
+      return json(result);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/import",
+    handler: async (ctx, req) => {
+      if (!ctx.vault || !ctx.envResolver) {
+        return json({ error: "Vault and env resolver required for import" }, 400);
+      }
+      try {
+        const body = await req.json() as ImportRequest;
+        if (!body.automation) return json({ error: "automation is required" }, 400);
+        const id = importAutomation(ctx.appDb, ctx.vault, ctx.envResolver, body);
+        return json({ id }, 201);
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "GET",
+    pattern: "/api/automations/:id/versions",
+    handler: (ctx, _req, params) => {
+      const automation = getAutomation(ctx.db, params.id);
+      if (!automation) return json({ error: "Automation not found" }, 404);
+      const versions = listVersions(ctx.db, params.id);
+      return json(versions);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/automations/:id/revert/:versionNo",
+    handler: (ctx, _req, params) => {
+      const versionNo = parseInt(params.versionNo, 10);
+      if (isNaN(versionNo)) return json({ error: "Invalid version number" }, 400);
+      const result = revertToVersion(ctx.db, params.id, versionNo);
+      if (!result) return json({ error: "Version or automation not found" }, 404);
+      return json(result);
+    },
+  },
+  {
+    method: "PUT",
+    pattern: "/api/automations/:id/versions/:versionId/label",
+    handler: async (ctx, req, params) => {
+      try {
+        const body = await req.json() as { label: string };
+        if (!body.label) return json({ error: "label is required" }, 400);
+        const success = labelVersion(ctx.db, params.versionId, body.label);
+        if (!success) return json({ error: "Version not found" }, 404);
+        return json({ success: true });
+      } catch {
+        return json({ error: "Invalid request body" }, 400);
+      }
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/ai/chat",
+    handler: (ctx, req) => handleAiChat(ctx.db, req),
+  },
+  {
+    method: "POST",
+    pattern: "/api/ai/apply",
+    handler: (ctx, req) => handleAiApply(ctx.db, req),
+  },
+  {
+    method: "GET",
+    pattern: "/api/ai/models",
+    handler: (ctx, req) => handleAiModels(ctx.db, req),
+  },
+  {
+    method: "GET",
+    pattern: "/api/settings",
+    handler: (ctx) => handleGetSettings(ctx.db),
+  },
+  {
+    method: "PUT",
+    pattern: "/api/settings",
+    handler: (ctx, req) => handleUpdateSettings(ctx.db, req),
+  },
 ];
 
 export function handleApiRoute(
@@ -291,6 +510,9 @@ export function handleApiRoute(
   fleetDispatcher?: FleetDispatcher,
   hub?: WssHub,
   artifactStore?: ArtifactStore,
+  appDb?: AppDatabase,
+  vault?: CredentialVault,
+  envResolver?: EnvResolver,
 ): Response | Promise<Response> | null {
   const url = new URL(req.url);
   const pathname = url.pathname;
@@ -300,7 +522,11 @@ export function handleApiRoute(
     if (route.method !== method) continue;
     const params = matchRoute(pathname, route.pattern);
     if (params !== null) {
-      return route.handler({ db, dispatcher, fleetDispatcher, hub, artifactStore }, req, params);
+      return route.handler(
+        { db, appDb: appDb ?? (db as any), dispatcher, fleetDispatcher, hub, artifactStore, vault, envResolver },
+        req,
+        params,
+      );
     }
   }
 

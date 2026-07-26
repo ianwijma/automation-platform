@@ -1,5 +1,7 @@
 import type { ExecutionDependencies, AgentDispatch, RunRecord, NodeExecutionRecord } from "../core/execution-engine.js";
 import type { CapabilityReport } from "../core/node-contract.js";
+import type { CredentialVault } from "../core/credential-vault.js";
+import type { EnvResolver } from "../core/env-resolver.js";
 import { LocalAgent } from "./local-agent.js";
 
 export class AgentDispatcher implements ExecutionDependencies {
@@ -7,11 +9,23 @@ export class AgentDispatcher implements ExecutionDependencies {
   private stateMap = new Map<string, unknown>();
   private runs: RunRecord[] = [];
   private nodeExecutions: NodeExecutionRecord[] = [];
+  private vault: CredentialVault | null;
+  private envResolver: EnvResolver | null;
 
   readonly now = () => new Date();
 
-  constructor() {
+  constructor(vault?: CredentialVault, envResolver?: EnvResolver) {
+    this.vault = vault ?? null;
+    this.envResolver = envResolver ?? null;
     this.registerAgent(new LocalAgent());
+  }
+
+  setVault(vault: CredentialVault): void {
+    this.vault = vault;
+  }
+
+  setEnvResolver(envResolver: EnvResolver): void {
+    this.envResolver = envResolver;
   }
 
   registerAgent(agent: AgentDispatch): void {
@@ -42,12 +56,28 @@ export class AgentDispatcher implements ExecutionDependencies {
     throw new Error(`Unknown target kind: ${target.kind}`);
   }
 
-  resolveEnv(_agentId: string, _automationId: string, _nodeType: string): Record<string, string> {
-    return {};
+  resolveEnv(agentId: string, automationId: string, _nodeType: string): Record<string, string> {
+    if (!this.envResolver) return {};
+    return this.envResolver.resolveForExecution(agentId, automationId);
   }
 
-  resolveSecrets(_agentId: string, _credentialRefs: Record<string, unknown>): Record<string, string> {
-    return {};
+  resolveSecrets(_agentId: string, credentialRefs: Record<string, unknown>): Record<string, string> {
+    if (!this.vault) return {};
+    const result: Record<string, string> = {};
+    const refs = credentialRefs as { type?: string; name?: string };
+    if (refs.type && refs.name) {
+      try {
+        const cred = this.vault.getCredentialByName(refs.name);
+        if (cred) {
+          for (const [k, v] of Object.entries(cred.values)) {
+            result[k] = v;
+          }
+        }
+      } catch {
+        // credential not found, skip
+      }
+    }
+    return result;
   }
 
   getState(automationId: string, key: string): unknown {

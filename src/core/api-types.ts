@@ -103,7 +103,7 @@ export interface ImportRequest {
 }
 
 export interface AiChatRequest {
-  message: string;
+  messages: Array<{ role: string; content: string }>;
   automationId?: string;
   model?: string;
 }

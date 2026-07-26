@@ -5,12 +5,17 @@ import { AutomationCanvas } from "./components/AutomationCanvas";
 import { NodeEditor } from "./components/NodeEditor";
 import { AutomationList } from "./components/AutomationList";
 import { RunPanel } from "./components/RunPanel";
+import { AiPanel } from "./components/AiPanel";
+import { VersionHistory } from "./components/VersionHistory";
 import {
   Play,
   Save,
   FlaskConical,
   Settings,
   MessageSquare,
+  History,
+  Zap,
+  Eye,
 } from "lucide-react";
 
 function formatUptime(seconds: number): string {
@@ -30,11 +35,18 @@ function App() {
   const currentAutomationId = useAppStore((s) => s.currentAutomationId);
   const currentDefinition = useAppStore((s) => s.currentDefinition);
   const isDirty = useAppStore((s) => s.isDirty);
+  const isPreviewMode = useAppStore((s) => s.isPreviewMode);
+  const previewVersion = useAppStore((s) => s.previewVersion);
+  const clearPreviewVersion = useAppStore((s) => s.clearPreviewVersion);
   const dryRun = useAppStore((s) => s.dryRun);
   const setDryRun = useAppStore((s) => s.setDryRun);
   const selectedNodeId = useAppStore((s) => s.selectedNodeId);
   const saveAutomation = useAppStore((s) => s.saveAutomation);
   const runCurrentAutomation = useAppStore((s) => s.runCurrentAutomation);
+  const showAiPanel = useAppStore((s) => s.showAiPanel);
+  const showVersionHistory = useAppStore((s) => s.showVersionHistory);
+  const setShowAiPanel = useAppStore((s) => s.setShowAiPanel);
+  const setShowVersionHistory = useAppStore((s) => s.setShowVersionHistory);
 
   useEffect(() => {
     fetchSystemInfo();
@@ -78,6 +90,30 @@ function App() {
           {currentAutomationId && (
             <>
               <button
+                onClick={() => setShowVersionHistory(!showVersionHistory)}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  showVersionHistory
+                    ? "bg-indigo-500/20 text-indigo-400"
+                    : "bg-gray-800 text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                <History className="h-3 w-3" />
+                Versions
+              </button>
+
+              <button
+                onClick={() => setShowAiPanel(!showAiPanel)}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                  showAiPanel
+                    ? "bg-indigo-500/20 text-indigo-400"
+                    : "bg-gray-800 text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                <Zap className="h-3 w-3" />
+                AI
+              </button>
+
+              <button
                 onClick={() => setDryRun(!dryRun)}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors ${
                   dryRun
@@ -91,7 +127,7 @@ function App() {
 
               <button
                 onClick={handleSave}
-                disabled={!isDirty}
+                disabled={!isDirty || isPreviewMode}
                 className="flex items-center gap-1.5 rounded-md bg-gray-800 px-2.5 py-1 text-[11px] font-medium text-gray-400 transition-colors hover:text-gray-200 disabled:opacity-40"
               >
                 <Save className="h-3 w-3" />
@@ -100,7 +136,8 @@ function App() {
 
               <button
                 onClick={handleRun}
-                className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500"
+                disabled={isPreviewMode}
+                className="flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1 text-[11px] font-medium text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
               >
                 <Play className="h-3 w-3" />
                 Run
@@ -116,7 +153,21 @@ function App() {
         </div>
       </header>
 
-      {dryRun && currentAutomationId && (
+      {isPreviewMode && previewVersion && (
+        <div className="flex items-center gap-2 border-b border-indigo-700/30 bg-indigo-950/30 px-4 py-1.5 text-xs text-indigo-400">
+          <Eye className="h-3.5 w-3.5" />
+          <span className="font-medium">Previewing v{previewVersion.versionNo}</span>
+          <span className="text-indigo-500">Read-only mode</span>
+          <button
+            onClick={clearPreviewVersion}
+            className="ml-auto rounded bg-gray-800 px-2 py-0.5 text-[10px] text-gray-400 transition-colors hover:text-gray-200"
+          >
+            Back to draft
+          </button>
+        </div>
+      )}
+
+      {dryRun && currentAutomationId && !isPreviewMode && (
         <div className="flex items-center gap-2 border-b border-amber-700/30 bg-amber-950/30 px-4 py-1.5 text-xs text-amber-400">
           <FlaskConical className="h-3.5 w-3.5" />
           <span className="font-medium">Dry Run Mode</span>
@@ -140,7 +191,7 @@ function App() {
                 </div>
               </ReactFlowProvider>
 
-              {selectedNodeId && (
+              {selectedNodeId && !isPreviewMode && (
                 <div className="w-64 shrink-0 border-l border-gray-800 bg-gray-950">
                   <NodeEditor />
                 </div>
@@ -166,9 +217,23 @@ function App() {
           )}
         </div>
 
-        <div className="w-56 shrink-0 border-l border-gray-800 bg-gray-950">
-          <RunPanel />
-        </div>
+        {showVersionHistory && (
+          <div className="w-72 shrink-0 border-l border-gray-800 bg-gray-950">
+            <VersionHistory />
+          </div>
+        )}
+
+        {showAiPanel && (
+          <div className="w-72 shrink-0 border-l border-gray-800 bg-gray-950">
+            <AiPanel />
+          </div>
+        )}
+
+        {!showVersionHistory && !showAiPanel && (
+          <div className="w-56 shrink-0 border-l border-gray-800 bg-gray-950">
+            <RunPanel />
+          </div>
+        )}
       </div>
 
       <footer className="flex h-6 items-center justify-between border-t border-gray-800 bg-gray-900 px-4 text-[10px] text-gray-600">
@@ -177,7 +242,10 @@ function App() {
           {systemInfo && <span>Uptime: {formatUptime(systemInfo.uptime)}</span>}
         </div>
         <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1 rounded px-1.5 py-0.5 text-gray-600 hover:text-gray-400">
+          <button
+            onClick={() => setShowAiPanel(!showAiPanel)}
+            className="flex items-center gap-1 rounded px-1.5 py-0.5 text-gray-600 hover:text-gray-400"
+          >
             <MessageSquare className="h-3 w-3" />
             AI Chat
           </button>

@@ -152,6 +152,34 @@ export const CATEGORY_TEXT: Record<string, string> = {
   input: "text-teal-400",
 };
 
+export interface AutomationVersionResponse {
+  id: string;
+  automationId: string;
+  versionNo: number;
+  definition: AutomationDefinition;
+  label: string | null;
+  createdAt: string;
+}
+
+export interface AiDiff {
+  op: "add-node" | "remove-node" | "update-node-params" | "add-edge" | "remove-edge" | "update-settings";
+  path: string;
+  value: unknown;
+  description: string;
+}
+
+export interface AiChatResponse {
+  message: string;
+  diffs?: AiDiff[];
+}
+
+export interface AiSettingsResponse {
+  aiApiKey: string | null;
+  aiModel: string;
+  aiEndpoint: string | null;
+  hasApiKey: boolean;
+}
+
 export const CATEGORY_BORDER: Record<string, string> = {
   trigger: "border-blue-500/60",
   execution: "border-green-500/60",

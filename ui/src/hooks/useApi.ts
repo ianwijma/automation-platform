@@ -4,6 +4,10 @@ import type {
   AutomationDefinition,
   RunResponse,
   NodeExecutionResponse,
+  AutomationVersionResponse,
+  AiChatResponse,
+  AiDiff,
+  AiSettingsResponse,
 } from "../types";
 
 export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -85,4 +89,73 @@ export function listNodeExecutions(
   runId: string,
 ): Promise<NodeExecutionResponse[]> {
   return fetchJson(`/api/runs/${runId}/executions`);
+}
+
+export function listVersions(
+  automationId: string,
+): Promise<AutomationVersionResponse[]> {
+  return fetchJson(`/api/automations/${automationId}/versions`);
+}
+
+export function revertToVersion(
+  automationId: string,
+  versionNo: number,
+): Promise<AutomationResponse> {
+  return fetchJson(`/api/automations/${automationId}/revert/${versionNo}`, {
+    method: "POST",
+  });
+}
+
+export function labelVersion(
+  automationId: string,
+  versionId: string,
+  label: string,
+): Promise<{ success: boolean }> {
+  return fetchJson(
+    `/api/automations/${automationId}/versions/${versionId}/label`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ label }),
+    },
+  );
+}
+
+export function sendAiChat(
+  messages: Array<{ role: string; content: string }>,
+  automationId?: string,
+  model?: string,
+): Promise<AiChatResponse> {
+  return fetchJson("/api/ai/chat", {
+    method: "POST",
+    body: JSON.stringify({ messages, automationId, model }),
+  });
+}
+
+export function applyAiDiffs(
+  automationId: string,
+  diffs: AiDiff[],
+): Promise<{ automationId: string; definition: AutomationDefinition }> {
+  return fetchJson("/api/ai/apply", {
+    method: "POST",
+    body: JSON.stringify({ automationId, diffs }),
+  });
+}
+
+export function listAiModels(): Promise<{ models: string[] }> {
+  return fetchJson("/api/ai/models");
+}
+
+export function getSettings(): Promise<AiSettingsResponse> {
+  return fetchJson("/api/settings");
+}
+
+export function updateSettings(settings: {
+  aiApiKey?: string;
+  aiModel?: string;
+  aiEndpoint?: string;
+}): Promise<AiSettingsResponse> {
+  return fetchJson("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  });
 }

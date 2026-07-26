@@ -8,6 +8,9 @@ import type {
   FlowNode,
   RunResponse,
   NodeExecutionResponse,
+  AutomationVersionResponse,
+  AiDiff,
+  AiSettingsResponse,
 } from "./types";
 import {
   definitionToFlow,
@@ -17,6 +20,13 @@ import {
   generateEdgeId,
 } from "./convert";
 import * as api from "./hooks/useApi";
+
+interface AiChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  diffs?: AiDiff[];
+}
 
 interface AppStore {
   systemInfo: SystemInfoResponse | null;
@@ -35,6 +45,18 @@ interface AppStore {
   runs: RunResponse[];
   currentRunId: string | null;
   nodeExecutions: Record<string, NodeExecutionResponse[]>;
+
+  versions: AutomationVersionResponse[];
+  previewVersion: AutomationVersionResponse | null;
+  isPreviewMode: boolean;
+
+  aiMessages: AiChatMessage[];
+  aiLoading: boolean;
+  aiDiffApproval: Record<string, boolean>;
+  showAiPanel: boolean;
+  showVersionHistory: boolean;
+
+  aiSettings: AiSettingsResponse | null;
 
   fetchSystemInfo: () => Promise<void>;
   fetchAutomations: () => Promise<void>;
@@ -71,7 +93,28 @@ interface AppStore {
   fetchRuns: () => Promise<void>;
   fetchNodeExecutions: (runId: string) => Promise<void>;
   setCurrentRunId: (id: string | null) => void;
+
+  fetchVersions: () => Promise<void>;
+  setPreviewVersion: (version: AutomationVersionResponse | null) => void;
+  clearPreviewVersion: () => Promise<void>;
+  revertToVersion: (versionNo: number) => Promise<void>;
+  labelVersion: (versionId: string, label: string) => Promise<void>;
+
+  sendAiMessage: (message: string) => Promise<void>;
+  toggleDiffApproval: (diffKey: string) => void;
+  applyApprovedDiffs: () => Promise<void>;
+  setShowAiPanel: (show: boolean) => void;
+  setShowVersionHistory: (show: boolean) => void;
+
+  fetchAiSettings: () => Promise<void>;
+  updateAiSettings: (settings: {
+    aiApiKey?: string;
+    aiModel?: string;
+    aiEndpoint?: string;
+  }) => Promise<void>;
 }
+
+let aiMsgId = 0;
 
 export const useAppStore = create<AppStore>((set, get) => ({
   systemInfo: null,
@@ -90,6 +133,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   runs: [],
   currentRunId: null,
   nodeExecutions: {},
+
+  versions: [],
+  previewVersion: null,
+  isPreviewMode: false,
+
+  aiMessages: [],
+  aiLoading: false,
+  aiDiffApproval: {},
+  showAiPanel: false,
+  showVersionHistory: false,
+
+  aiSettings: null,
 
   fetchSystemInfo: async () => {
     try {
@@ -115,6 +170,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedNodeId: null,
       currentRunId: null,
       nodeExecutions: {},
+      previewVersion: null,
+      isPreviewMode: false,
     });
     if (!id) {
       set({ currentDefinition: null, rfNodes: [], rfEdges: [], isDirty: false });
@@ -149,8 +206,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   saveAutomation: async () => {
-    const { currentAutomationId, rfNodes, rfEdges, currentDefinition } = get();
-    if (!currentAutomationId || !currentDefinition) return;
+    const { currentAutomationId, rfNodes, rfEdges, currentDefinition, isPreviewMode } = get();
+    if (!currentAutomationId || !currentDefinition || isPreviewMode) return;
     const def = flowToDefinition(
       rfNodes,
       rfEdges,
@@ -320,4 +377,180 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setCurrentRunId: (id) => set({ currentRunId: id }),
+
+  fetchVersions: async () => {
+    const { currentAutomationId } = get();
+    if (!currentAutomationId) return;
+    try {
+      const versions = await api.listVersions(currentAutomationId);
+      set({ versions });
+    } catch {
+      /* ignore */
+    }
+  },
+
+  setPreviewVersion: (version: AutomationVersionResponse | null) => {
+    if (!version) {
+      set({ previewVersion: null, isPreviewMode: false });
+      return;
+    }
+    const { nodes, edges } = definitionToFlow(version.definition);
+    set({
+      previewVersion: version,
+      isPreviewMode: true,
+      rfNodes: nodes,
+      rfEdges: edges,
+      selectedNodeId: null,
+    });
+  },
+
+  clearPreviewVersion: async () => {
+    const { currentAutomationId } = get();
+    set({ previewVersion: null, isPreviewMode: false });
+    if (currentAutomationId) {
+      await get().selectAutomation(currentAutomationId);
+    }
+  },
+
+  revertToVersion: async (versionNo: number) => {
+    const { currentAutomationId } = get();
+    if (!currentAutomationId) return;
+    try {
+      const resp = await api.revertToVersion(currentAutomationId, versionNo);
+      const { nodes, edges } = definitionToFlow(resp.draft ?? makeDefaultDefinition(resp.name));
+      set({
+        currentDefinition: resp.draft,
+        rfNodes: nodes,
+        rfEdges: edges,
+        isDirty: false,
+        isPreviewMode: false,
+        previewVersion: null,
+      });
+      await get().fetchVersions();
+    } catch {
+      /* ignore */
+    }
+  },
+
+  labelVersion: async (versionId: string, label: string) => {
+    const { currentAutomationId } = get();
+    if (!currentAutomationId) return;
+    try {
+      await api.labelVersion(currentAutomationId, versionId, label);
+      await get().fetchVersions();
+    } catch {
+      /* ignore */
+    }
+  },
+
+  sendAiMessage: async (message: string) => {
+    const { currentAutomationId, aiMessages } = get();
+    const userMsg: AiChatMessage = {
+      id: `ai-${++aiMsgId}`,
+      role: "user",
+      content: message,
+    };
+
+    set((s) => ({
+      aiMessages: [...s.aiMessages, userMsg],
+      aiLoading: true,
+      aiDiffApproval: {},
+    }));
+
+    const chatHistory = [...aiMessages, userMsg].map((m) => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    try {
+      const result = await api.sendAiChat(
+        chatHistory,
+        currentAutomationId ?? undefined,
+      );
+      const assistantMsg: AiChatMessage = {
+        id: `ai-${++aiMsgId}`,
+        role: "assistant",
+        content: result.message,
+        diffs: result.diffs,
+      };
+      set((s) => ({
+        aiMessages: [...s.aiMessages, assistantMsg],
+        aiLoading: false,
+      }));
+    } catch (e) {
+      const errorMsg: AiChatMessage = {
+        id: `ai-${++aiMsgId}`,
+        role: "assistant",
+        content: `Error: ${(e as Error).message}`,
+      };
+      set((s) => ({
+        aiMessages: [...s.aiMessages, errorMsg],
+        aiLoading: false,
+      }));
+    }
+  },
+
+  toggleDiffApproval: (diffKey: string) => {
+    set((s) => ({
+      aiDiffApproval: {
+        ...s.aiDiffApproval,
+        [diffKey]: !s.aiDiffApproval[diffKey],
+      },
+    }));
+  },
+
+  applyApprovedDiffs: async () => {
+    const { currentAutomationId, aiMessages, aiDiffApproval } = get();
+    if (!currentAutomationId) return;
+
+    const allDiffs: AiDiff[] = [];
+    for (const msg of aiMessages) {
+      if (msg.diffs) {
+        msg.diffs.forEach((diff, i) => {
+          const key = `${msg.id}-diff-${i}`;
+          if (aiDiffApproval[key]) {
+            allDiffs.push(diff);
+          }
+        });
+      }
+    }
+
+    if (allDiffs.length === 0) return;
+
+    try {
+      const result = await api.applyAiDiffs(currentAutomationId, allDiffs);
+      const { nodes, edges } = definitionToFlow(result.definition);
+      set({
+        currentDefinition: result.definition,
+        rfNodes: nodes,
+        rfEdges: edges,
+        isDirty: false,
+        aiDiffApproval: {},
+      });
+      await get().fetchVersions();
+    } catch {
+      /* ignore */
+    }
+  },
+
+  setShowAiPanel: (show) => set({ showAiPanel: show }),
+  setShowVersionHistory: (show) => set({ showVersionHistory: show }),
+
+  fetchAiSettings: async () => {
+    try {
+      const settings = await api.getSettings();
+      set({ aiSettings: settings });
+    } catch {
+      /* ignore */
+    }
+  },
+
+  updateAiSettings: async (settings) => {
+    try {
+      const result = await api.updateSettings(settings);
+      set({ aiSettings: result });
+    } catch {
+      /* ignore */
+    }
+  },
 }));
