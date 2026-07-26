@@ -115,6 +115,25 @@ function findUpstreamNodes(definition: AutomationDefinition, toNodeId: string): 
   return visited;
 }
 
+function findFromNodeOnward(definition: AutomationDefinition, fromNodeId: string): Set<string> {
+  const visited = new Set<string>();
+  const queue = [fromNodeId];
+
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (visited.has(current)) continue;
+    visited.add(current);
+
+    for (const edge of definition.edges) {
+      if (edge.source === current && !visited.has(edge.target)) {
+        queue.push(edge.target);
+      }
+    }
+  }
+
+  return visited;
+}
+
 function getTriggerNodes(definition: AutomationDefinition): AutomationNode[] {
   return definition.nodes.filter((n) => n.type.startsWith("trigger."));
 }
@@ -168,20 +187,26 @@ export class ExecutionEngine {
     this.deps.saveRun(run);
 
     const nodeMap = new Map(definition.nodes.map((n) => [n.id, n]));
-    let nodesToExecute: Set<string>;
-
-    if (options.fromNodeId) {
-      const upstream = findUpstreamNodes(definition, options.fromNodeId);
-      nodesToExecute = upstream;
-    } else {
-      nodesToExecute = new Set(definition.nodes.map((n) => n.id));
-    }
-
     const topologicalOrder = this.topologicalSort(definition);
-    const executionOrder = topologicalOrder.filter((id) => nodesToExecute.has(id));
+    let executionOrder: string[];
 
     const outputs: NodeOutputMap = new Map();
+
+    if (options.fromNodeId) {
+      const nodesToRun = findFromNodeOnward(definition, options.fromNodeId);
+      executionOrder = topologicalOrder.filter((id) => nodesToRun.has(id));
+
+      if (options.pinData) {
+        for (const [nodeId, items] of Object.entries(options.pinData)) {
+          outputs.set(nodeId, items as NodeItem[]);
+        }
+      }
+    } else {
+      executionOrder = topologicalOrder;
+    }
+
     const isDryRun = options.dryRun ?? options.mode === "dry";
+    const savePayloads = definition.settings?.savePayloads ?? true;
 
     let runTimedOut = false;
     const runTimeoutMs = (definition.settings.runTimeoutSec ?? 3600) * 1000;
@@ -214,7 +239,7 @@ export class ExecutionEngine {
         const nodeExecRecord = this.createNodeExecRecord(
           runId, nodeId, agent.agentId, "success", 0, false,
           inputItems, options.pinData[nodeId], true,
-          startedAt, 0, null,
+          startedAt, 0, null, savePayloads,
         );
         run.nodeExecutions.push(nodeExecRecord);
         this.deps.saveNodeExecution(nodeExecRecord);
@@ -255,7 +280,7 @@ export class ExecutionEngine {
         const nodeExecRecord = this.createNodeExecRecord(
           runId, nodeId, agent.agentId, "success", 0, true,
           inputItems, simResult.data ?? [], false,
-          startedAt, 0, null,
+          startedAt, 0, null, savePayloads,
         );
         run.nodeExecutions.push(nodeExecRecord);
         this.deps.saveNodeExecution(nodeExecRecord);
@@ -291,12 +316,16 @@ export class ExecutionEngine {
             automationId,
           );
 
+          if (result.error) {
+            throw new Error(result.error);
+          }
+
           outputs.set(nodeId, result.items);
 
           const nodeExecRecord = this.createNodeExecRecord(
             runId, nodeId, agent.agentId, "success", attempt, isDryRun && nodeDef.sideEffecting,
             inputItems, result.items, false,
-            nodeStart, result.durationMs, null,
+            nodeStart, result.durationMs, null, savePayloads,
           );
           run.nodeExecutions.push(nodeExecRecord);
           this.deps.saveNodeExecution(nodeExecRecord);
@@ -316,7 +345,7 @@ export class ExecutionEngine {
         const nodeExecRecord = this.createNodeExecRecord(
           runId, nodeId, agent.agentId, "error", retry.attempts, isDryRun && nodeDef.sideEffecting,
           inputItems, null, false,
-          startedAt, 0, lastError,
+          startedAt, 0, lastError, savePayloads,
         );
         run.nodeExecutions.push(nodeExecRecord);
         this.deps.saveNodeExecution(nodeExecRecord);
@@ -382,10 +411,14 @@ export class ExecutionEngine {
     status: NodeExecutionRecord["status"], attempt: number, simulated: boolean,
     input: NodeItem[] | null, output: NodeItem[] | null, pinned: boolean,
     startedAt: string, durationMs: number, error: string | null,
+    savePayloads: boolean = true,
   ): NodeExecutionRecord {
     return {
       id: randomUUID(), runId, nodeId, agentId, status, attempt,
-      simulated, input, output, pinned, startedAt, durationMs, error,
+      simulated,
+      input: savePayloads ? input : null,
+      output: savePayloads ? output : null,
+      pinned, startedAt, durationMs, error,
     };
   }
 

@@ -201,6 +201,23 @@ const routes: Route[] = [
     },
   },
   {
+    method: "POST",
+    pattern: "/api/runs/:id/rerun-from/:nodeId",
+    handler: async (ctx, _req, params) => {
+      const { rerunFromNode } = await import("./rerun.js");
+      const run = await rerunFromNode(ctx.db, ctx.dispatcher, params.id, params.nodeId);
+      if (!run) return json({ error: "Run or node not found" }, 404);
+      return json(run, 201);
+    },
+  },
+  {
+    method: "POST",
+    pattern: "/api/runs/:id/cancel",
+    handler: (ctx, _req, params) => {
+      return json({ error: "Not yet implemented" }, 501);
+    },
+  },
+  {
     method: "GET",
     pattern: "/api/agents",
     handler: (ctx) => {
