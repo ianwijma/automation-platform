@@ -7,12 +7,14 @@
     "dev": "bun run src/main.ts",
     "build": "bun run build.ts",
     "build:ui": "bun run --filter automation-platform-ui build",
-    "test": "bun test",
+    "test": "bun test src/",
+    "test:e2e": "bunx playwright test",
     "lint": "bun run lint.ts",
     "typecheck": "bunx tsc --noEmit"
   },
   "dependencies": {},
   "devDependencies": {
+    "@playwright/test": "^1.62.0",
     "@types/bun": "latest",
     "typescript": "^5.7.0"
   }

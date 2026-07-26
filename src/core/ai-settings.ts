@@ -37,9 +37,9 @@ export function setAiSettings(
   );
 
   const entries: Array<[string, string]> = [];
-  if (settings.apiKey !== undefined) entries.push(["ai_api_key", settings.apiKey]);
-  if (settings.model !== undefined) entries.push(["ai_model", settings.model]);
-  if (settings.endpoint !== undefined) entries.push(["ai_endpoint", settings.endpoint]);
+  if (settings.apiKey !== undefined) entries.push(["ai_api_key", settings.apiKey ?? ""]);
+  if (settings.model !== undefined) entries.push(["ai_model", settings.model ?? ""]);
+  if (settings.endpoint !== undefined) entries.push(["ai_endpoint", settings.endpoint ?? ""]);
 
   if (entries.length === 0) return;
 
