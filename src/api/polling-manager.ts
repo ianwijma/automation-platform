@@ -16,11 +16,12 @@ interface PollingEntry {
   timer: ReturnType<typeof setInterval> | null;
   db: Database;
   dispatcher: AgentDispatcher;
+  executePoll: (targetType: string, target: string) => Promise<Record<string, unknown>>;
 }
 
 const activePolls = new Map<string, PollingEntry>();
 
-async function executePoll(targetType: string, target: string): Promise<Record<string, unknown>> {
+const defaultExecutePoll = async (targetType: string, target: string): Promise<Record<string, unknown>> => {
   if (targetType === "url") {
     const response = await fetch(target);
     const body = await response.text();
@@ -47,7 +48,7 @@ async function executePoll(targetType: string, target: string): Promise<Record<s
   }
 
   throw new Error(`Unknown polling targetType: ${targetType}`);
-}
+};
 
 function hashResult(result: Record<string, unknown>): string {
   const json = JSON.stringify(result);
@@ -68,7 +69,7 @@ async function pollCycle(entry: PollingEntry): Promise<void> {
   }
 
   try {
-    const result = await executePoll(entry.targetType, entry.target);
+    const result = await entry.executePoll(entry.targetType, entry.target);
     const newHash = hashResult(result);
 
     if (entry.lastHash !== null && entry.lastHash === newHash) {
@@ -116,6 +117,7 @@ export function startPolling(
   },
   db: Database,
   dispatcher: AgentDispatcher,
+  executePoll?: (targetType: string, target: string) => Promise<Record<string, unknown>>,
 ): void {
   if (activePolls.has(automationId)) {
     stopPolling(automationId);
@@ -132,6 +134,7 @@ export function startPolling(
     timer: null,
     db,
     dispatcher,
+    executePoll: executePoll ?? defaultExecutePoll,
   };
 
   entry.timer = setInterval(() => {

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { createDatabase, AppDatabase } from "../src/db/database.js";
-import { CredentialVault } from "../src/core/credential-vault.js";
+import { createDatabase, AppDatabase } from "../db/database.js";
+import { CredentialVault } from "./credential-vault.js";
 
 describe("CredentialVault", () => {
   let db: AppDatabase;

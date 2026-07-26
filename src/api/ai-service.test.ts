@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { AiService } from "../src/api/ai-service.js";
-import type { AutomationDefinition, AutomationNode, AutomationEdge, AutomationSettings } from "../src/core/types.js";
-import type { AiDiff } from "../src/core/api-types.js";
+import { AiService } from "./ai-service.js";
+import type { AutomationDefinition, AutomationNode, AutomationEdge, AutomationSettings } from "../core/types.js";
+import type { AiDiff } from "../core/api-types.js";
 
 const BASE_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,

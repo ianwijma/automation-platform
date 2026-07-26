@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 
-const BROWSER_CANDIDATES = ["xdg-open", "sensible-browser", "firefox", "chromium"];
+const DEFAULT_CANDIDATES = ["xdg-open", "sensible-browser", "firefox", "chromium"];
 
-export function openBrowser(url: string): boolean {
-  for (const candidate of BROWSER_CANDIDATES) {
+export function openBrowser(url: string, candidates?: string[]): boolean {
+  const list = candidates ?? DEFAULT_CANDIDATES;
+  for (const candidate of list) {
     const result = spawnSync(candidate, [url], {
       stdio: "ignore",
       timeout: 5000,

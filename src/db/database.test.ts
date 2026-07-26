@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { createDatabase } from "../src/db";
+import { createDatabase } from "./database.js";
 
 const PLAN_TABLES = [
   "automations",

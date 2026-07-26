@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { nodeRegistry } from "../src/core/node-registry.js";
-import { NodeRegistry } from "../src/core/node-registry.js";
-import "../src/nodes/index.js";
-import { parseCron, cronMatches, Scheduler } from "../src/core/scheduler.js";
+import { nodeRegistry } from "./node-registry.js";
+import { NodeRegistry } from "./node-registry.js";
+import "../nodes/index.js";
+import { parseCron, cronMatches, Scheduler } from "./scheduler.js";
 
 describe("Trigger Node Registration", () => {
   test("schedule trigger is registered", () => {

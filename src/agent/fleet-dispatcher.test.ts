@@ -1,8 +1,8 @@
 import { describe, test, expect, beforeEach } from "bun:test";
-import { FleetDispatcher } from "../src/agent/fleet-dispatcher.js";
-import { LocalAgent } from "../src/agent/local-agent.js";
-import type { AgentDispatch } from "../src/core/execution-engine.js";
-import type { CapabilityReport } from "../src/core/node-contract.js";
+import { FleetDispatcher } from "./fleet-dispatcher.js";
+import { LocalAgent } from "./local-agent.js";
+import type { AgentDispatch } from "../core/execution-engine.js";
+import type { CapabilityReport } from "../core/node-contract.js";
 
 const LINUX_CAPS: CapabilityReport = {
   os: "linux",

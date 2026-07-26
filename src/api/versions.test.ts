@@ -1,18 +1,18 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { createDatabase } from "../src/db/database.js";
-import type { AppDatabase } from "../src/db/database.js";
+import { createDatabase } from "../db/database.js";
+import type { AppDatabase } from "../db/database.js";
 import {
   createAutomation,
   updateAutomation,
-} from "../src/api/automations.js";
+} from "./automations.js";
 import {
   listVersions,
   getVersion,
   revertToVersion,
   labelVersion,
-} from "../src/api/versions.js";
-import type { AutomationDefinition } from "../src/core/types.js";
-import "../src/nodes/index.js";
+} from "./versions.js";
+import type { AutomationDefinition } from "../core/types.js";
+import "../nodes/index.js";
 
 const TEST_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,

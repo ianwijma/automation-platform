@@ -6,7 +6,7 @@ import {
   decryptData,
   encryptForStorage,
   decryptFromStorage,
-} from "../src/core/crypto.js";
+} from "./crypto.js";
 
 describe("crypto utilities", () => {
   test("encrypt/decrypt round-trip", () => {

@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { probeCapabilities } from "../src/agent/capability-probe.js";
-import type { CapabilityReport } from "../src/core/node-contract.js";
+import { probeCapabilities } from "./capability-probe.js";
+import type { CapabilityReport } from "../core/node-contract.js";
 
 describe("probeCapabilities", () => {
   test("returns a valid CapabilityReport with all required fields", async () => {

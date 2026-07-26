@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { ExecutionEngine } from "../src/core/execution-engine.js";
-import { AgentDispatcher } from "../src/agent/dispatcher.js";
-import { nodeRegistry } from "../src/core/node-registry.js";
-import "../src/nodes/index.js";
-import type { AutomationDefinition } from "../src/core/types.js";
+import { ExecutionEngine } from "./execution-engine.js";
+import { AgentDispatcher } from "../agent/dispatcher.js";
+import { nodeRegistry } from "./node-registry.js";
+import "../nodes/index.js";
+import type { AutomationDefinition } from "./types.js";
 
 const MIXED_EXEC_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,
