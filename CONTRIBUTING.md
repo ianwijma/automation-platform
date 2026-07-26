@@ -6,7 +6,7 @@ Thanks for your interest in contributing! This document covers the process and c
 
 1. Fork the repository
 2. Clone your fork: `git clone https://github.com/<you>/automation-platform.git`
-3. Install dependencies: `bun install && cd ui && bun install && cd ..`
+3. Install dependencies: `bun install`
 4. Create a feature branch: `git checkout -b feature/my-feature`
 5. Make your changes and add tests
 6. Run the test suite: `bun test`

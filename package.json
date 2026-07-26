@@ -2,10 +2,11 @@
   "name": "automation-platform",
   "version": "0.1.0",
   "type": "module",
+  "workspaces": ["ui"],
   "scripts": {
     "dev": "bun run src/main.ts",
     "build": "bun run build.ts",
-    "build:ui": "cd ui && bun run build",
+    "build:ui": "bun run --filter automation-platform-ui build",
     "test": "bun test",
     "lint": "bun run lint.ts",
     "typecheck": "bunx tsc --noEmit"

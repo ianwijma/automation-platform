@@ -32,7 +32,6 @@ cd automation-platform
 
 # Install dependencies
 bun install
-cd ui && bun install && cd ..
 
 # Run in development mode
 bun run dev
