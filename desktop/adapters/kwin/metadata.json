@@ -1,0 +1,13 @@
+{
+  "KPlugin": {
+    "Id": "automation-platform",
+    "Name": "Automation Platform Window Bridge",
+    "Description": "Window discovery and focus for Automation Platform; capture/input use portal permissions",
+    "Version": "0.1.0",
+    "License": "MIT",
+    "Authors": [{ "Name": "Automation Platform contributors" }]
+  },
+  "X-Plasma-API": "javascript",
+  "X-Plasma-MainScript": "code/main.js",
+  "KPackageStructure": "KWin/Script"
+}

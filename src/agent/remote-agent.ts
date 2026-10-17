@@ -1,4 +1,9 @@
-import type { AgentDispatch, StateAccess } from "../core/execution-engine.js";
+import { createHash } from "node:crypto";
+import type {
+  AgentDispatch,
+  StateAccess,
+  DispatchContext,
+} from "../core/execution-engine.js";
 import type { NodeDefinition, NodeItem } from "../core/node-contract.js";
 import type { AgentDispatchMessage } from "../core/agent-protocol.js";
 import type { WssHub } from "../api/wss-hub.js";
@@ -24,11 +29,31 @@ export class RemoteAgent implements AgentDispatch {
     _state: StateAccess,
     runId: string,
     _automationId: string,
-  ): Promise<{ items: NodeItem[]; durationMs: number; error?: string }> {
+    context?: DispatchContext,
+  ): ReturnType<AgentDispatch["send"]> {
+    const artifactData: Record<string, string> = {};
+    const collect = (value: unknown) => {
+      if (!value || typeof value !== "object") return;
+      if ("$artifact" in value && typeof value.$artifact === "string") {
+        const artifact = this.hub.artifactStore?.getArtifact(value.$artifact);
+        if (!artifact)
+          throw new Error(`Artifact unavailable: ${value.$artifact}`);
+        artifactData[value.$artifact] = artifact.data.toString("base64");
+      } else for (const child of Object.values(value)) collect(child);
+    };
+    collect(items);
+    collect(params);
     const dispatchMsg: AgentDispatchMessage = {
       type: "dispatch",
       nodeExecutionId: nodeExecId,
-      nodeId: _node.type,
+      protocolVersion: 2,
+      automationId: _automationId,
+      nodeVersion: _node.version,
+      nodeId: context?.nodeId ?? _node.type,
+      actionTarget: context?.actionTarget,
+      inputs: context?.inputs,
+      state: context?.stateSnapshot ?? {},
+      artifactData,
       nodeType: _node.type,
       params,
       items,
@@ -39,12 +64,46 @@ export class RemoteAgent implements AgentDispatch {
       timeoutSec,
     };
 
+    const cancel = () =>
+      this.hub.broadcastToAgent(this.agentId, {
+        type: "cancel",
+        nodeExecutionId: nodeExecId,
+      });
+    context?.signal.addEventListener("abort", cancel, { once: true });
     try {
-      const result = await this.hub.dispatchToAgent(this.agentId, dispatchMsg, timeoutSec);
+      context?.signal.throwIfAborted();
+      const result = await this.hub.dispatchToAgent(
+        this.agentId,
+        dispatchMsg,
+        timeoutSec,
+      );
+      context?.signal.throwIfAborted();
+      if (result.status === "success") {
+        for (const artifact of result.artifacts ?? []) {
+          if (!artifact.data) throw new Error("Missing artifact data");
+          const bytes = Buffer.from(artifact.data, "base64");
+          if (createHash("sha256").update(bytes).digest("hex") !== artifact.id)
+            throw new Error("Artifact checksum mismatch");
+          if (!this.hub.artifactStore)
+            throw new Error("Artifact store unavailable");
+          this.hub.artifactStore.storeArtifact(
+            bytes,
+            artifact.mime,
+            artifact.name,
+            runId,
+          );
+        }
+        for (const [key, value] of Object.entries(result.stateWrites ?? {}))
+          _state.set(key, value);
+      }
       return {
         items: result.items ?? [],
         durationMs: result.durationMs,
-        error: result.error,
+        error:
+          result.status === "success"
+            ? undefined
+            : (result.error ?? result.status),
+        simulation: result.simulation,
       };
     } catch (err: any) {
       return {
@@ -52,6 +111,8 @@ export class RemoteAgent implements AgentDispatch {
         durationMs: 0,
         error: err?.message ?? String(err),
       };
+    } finally {
+      context?.signal.removeEventListener("abort", cancel);
     }
   }
 

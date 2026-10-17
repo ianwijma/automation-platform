@@ -1,7 +1,12 @@
+import { createDatabase } from "../db/database.js";
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { WssHub } from "./wss-hub.js";
-import type { AgentClientMessage, AgentDispatchMessage, AgentNodeResultMessage } from "../core/agent-protocol.js";
+import type {
+  AgentClientMessage,
+  AgentDispatchMessage,
+  AgentNodeResultMessage,
+} from "../core/agent-protocol.js";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS agents (
@@ -24,12 +29,15 @@ CREATE TABLE IF NOT EXISTS join_tokens (
 `;
 
 function createTestDb(): Database {
-  const db = new Database(":memory:");
-  db.exec(MIGRATION_SQL);
-  return db;
+  return createDatabase(":memory:").db;
 }
 
-function createMockWs(data: { connectedAt: number; agentId: string | null } = { connectedAt: Date.now(), agentId: null }) {
+function createMockWs(
+  data: { connectedAt: number; agentId: string | null } = {
+    connectedAt: Date.now(),
+    agentId: null,
+  },
+) {
   const sent: string[] = [];
   const state = { closed: false, closeCode: 0, closeReason: "" };
   return {
@@ -77,7 +85,14 @@ describe("WssHub", () => {
       type: "hello" as const,
       name: "test-agent",
       version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none" as const, tools: [], screen: false, input: "none" as const },
+      caps: {
+        os: "linux",
+        arch: "x64",
+        display: "none" as const,
+        tools: [],
+        screen: false,
+        input: "none" as const,
+      },
       token: "test-token",
     };
 
@@ -98,7 +113,14 @@ describe("WssHub", () => {
       type: "hello" as const,
       name: "disconnect-agent",
       version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none" as const, tools: [], screen: false, input: "none" as const },
+      caps: {
+        os: "linux",
+        arch: "x64",
+        display: "none" as const,
+        tools: [],
+        screen: false,
+        input: "none" as const,
+      },
       token: "test-token",
     };
 
@@ -116,7 +138,14 @@ describe("WssHub", () => {
       type: "hello" as const,
       name: "hb-agent",
       version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none" as const, tools: [], screen: false, input: "none" as const },
+      caps: {
+        os: "linux",
+        arch: "x64",
+        display: "none" as const,
+        tools: [],
+        screen: false,
+        input: "none" as const,
+      },
       token: "test-token",
     };
 
@@ -143,20 +172,40 @@ describe("WssHub", () => {
     const ws1 = createMockWs();
     const ws2 = createMockWs();
 
-    hub.handleMessage(ws1, JSON.stringify({
-      type: "hello",
-      name: "agent-a",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "token-a",
-    }));
-    hub.handleMessage(ws2, JSON.stringify({
-      type: "hello",
-      name: "agent-b",
-      version: "2.0.0",
-      caps: { os: "darwin", arch: "arm64", display: "none", tools: [], screen: false, input: "none" },
-      token: "token-b",
-    }));
+    hub.handleMessage(
+      ws1,
+      JSON.stringify({
+        type: "hello",
+        name: "agent-a",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "token-a",
+      }),
+    );
+    hub.handleMessage(
+      ws2,
+      JSON.stringify({
+        type: "hello",
+        name: "agent-b",
+        version: "2.0.0",
+        caps: {
+          os: "darwin",
+          arch: "arm64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "token-b",
+      }),
+    );
 
     const agents = hub.getConnectedAgents();
     expect(agents).toHaveLength(2);
@@ -166,13 +215,23 @@ describe("WssHub", () => {
 
   test("dispatch routing - dispatches to connected agent", async () => {
     const ws = createMockWs();
-    hub.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "dispatch-agent",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "token-d",
-    }));
+    hub.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "dispatch-agent",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "token-d",
+      }),
+    );
 
     const agentId = JSON.parse(ws.sent[0]).agentId;
 
@@ -226,7 +285,9 @@ describe("WssHub", () => {
       timeoutSec: 5,
     };
 
-    expect(hub.dispatchToAgent("nonexistent", dispatchMsg, 5)).rejects.toThrow("not connected");
+    expect(hub.dispatchToAgent("nonexistent", dispatchMsg, 5)).rejects.toThrow(
+      "not connected",
+    );
   });
 
   test("hello with db validates join token", () => {
@@ -236,23 +297,39 @@ describe("WssHub", () => {
     const { createHash, randomUUID } = require("node:crypto");
     const token = randomUUID();
     const tokenHash = createHash("sha256").update(token).digest("hex");
-    db.prepare("INSERT INTO join_tokens (token_hash, uses_left, expires_at) VALUES (?, ?, ?)")
-      .run(tokenHash, 1, new Date(Date.now() + 3600000).toISOString());
+    db.prepare(
+      "INSERT INTO join_tokens (token_hash, uses_left, expires_at) VALUES (?, ?, ?)",
+    ).run(tokenHash, 1, new Date(Date.now() + 3600000).toISOString());
 
     const ws = createMockWs();
-    h.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "token-agent",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token,
-    }));
+    h.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "token-agent",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token,
+      }),
+    );
 
     expect(ws.sent.length).toBe(1);
     const welcome = JSON.parse(ws.sent[0]);
     expect(welcome.type).toBe("welcome");
 
-    const usesLeft = db.query<{ uses_left: number }, [string]>("SELECT uses_left FROM join_tokens WHERE token_hash = ?").get(tokenHash)!;
+    const usesLeft = db
+      .query<
+        { uses_left: number },
+        [string]
+      >("SELECT uses_left FROM join_tokens WHERE token_hash = ?")
+      .get(tokenHash)!;
     expect(usesLeft.uses_left).toBe(0);
 
     h.close();
@@ -264,13 +341,23 @@ describe("WssHub", () => {
     const h = new WssHub(db);
 
     const ws = createMockWs();
-    h.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "bad-token-agent",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "invalid-token",
-    }));
+    h.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "bad-token-agent",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "invalid-token",
+      }),
+    );
 
     expect(ws.state.closed).toBe(true);
     expect(ws.state.closeCode).toBe(4003);
@@ -286,23 +373,36 @@ describe("WssHub", () => {
     });
 
     const ws = createMockWs();
-    hub.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "msg-agent",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "test-token",
-    }));
+    hub.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "msg-agent",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "test-token",
+      }),
+    );
 
     const agentId = JSON.parse(ws.sent[0]).agentId;
 
-    hub.handleMessage(ws, JSON.stringify({
-      type: "heartbeat",
-      agentId,
-      timestamp: Date.now(),
-    }));
+    hub.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "heartbeat",
+        agentId,
+        timestamp: Date.now(),
+      }),
+    );
 
-    expect(messages).toHaveLength(1);
-    expect(messages[0].msg.type).toBe("heartbeat");
+    expect(messages.map((m) => m.msg.type)).toEqual(["hello", "heartbeat"]);
+    expect(messages[1].msg.type).toBe("heartbeat");
   });
 });

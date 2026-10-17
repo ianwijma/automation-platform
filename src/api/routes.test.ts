@@ -5,7 +5,10 @@ import { AgentDispatcher } from "../agent/dispatcher.js";
 import { AppDatabase } from "../db/database.js";
 import { CredentialVault } from "../core/credential-vault.js";
 import { EnvResolver } from "../core/env-resolver.js";
-import type { RunRecord, NodeExecutionRecord } from "../core/execution-engine.js";
+import type {
+  RunRecord,
+  NodeExecutionRecord,
+} from "../core/execution-engine.js";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -132,7 +135,11 @@ function makeDefinition() {
   return {
     schemaVersion: 1 as const,
     name: "Test Auto",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
     nodes: [
       {
         id: "node-1",
@@ -155,18 +162,24 @@ function insertAutomation(db: Database, id: string, name = "Test") {
   const defJson = JSON.stringify(def);
   const versionId = `v-${id}`;
   db.prepare(
-    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
   ).run(id, name, versionId, defJson, JSON.stringify(def.settings), now, now);
   db.prepare(
-    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
   ).run(versionId, id, 1, defJson, now);
   return versionId;
 }
 
-function buildRouteContext(overrides?: { vault?: CredentialVault; envResolver?: EnvResolver }) {
+function buildRouteContext(overrides?: {
+  vault?: CredentialVault;
+  envResolver?: EnvResolver;
+}) {
   const db = createTestDb();
   const appDb = new AppDatabase(db);
-  const dispatcher = new AgentDispatcher(overrides?.vault, overrides?.envResolver);
+  const dispatcher = new AgentDispatcher(
+    overrides?.vault,
+    overrides?.envResolver,
+  );
   return { db, appDb, dispatcher };
 }
 
@@ -183,7 +196,9 @@ function makeRequest(method: string, path: string, body?: unknown): Request {
   return new Request(makeUrl(path), init);
 }
 
-async function extractCorsHeaders(res: Response): Promise<Record<string, string>> {
+async function extractCorsHeaders(
+  res: Response,
+): Promise<Record<string, string>> {
   const cors: Record<string, string> = {};
   const expectedKeys = [
     "access-control-allow-origin",
@@ -205,12 +220,18 @@ describe("matchRoute", () => {
   });
 
   test("parameterized match returns extracted params", () => {
-    const result = matchRoute("/api/automations/abc-123", "/api/automations/:id");
+    const result = matchRoute(
+      "/api/automations/abc-123",
+      "/api/automations/:id",
+    );
     expect(result).toEqual({ id: "abc-123" });
   });
 
   test("multiple parameters are extracted", () => {
-    const result = matchRoute("/api/runs/run-1/rerun-from/node-2", "/api/runs/:id/rerun-from/:nodeId");
+    const result = matchRoute(
+      "/api/runs/run-1/rerun-from/node-2",
+      "/api/runs/:id/rerun-from/:nodeId",
+    );
     expect(result).toEqual({ id: "run-1", nodeId: "node-2" });
   });
 
@@ -245,21 +266,21 @@ describe("handleApiRoute", () => {
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res).not.toBeNull();
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(1);
   });
 
-  test("CORS headers present on all responses", async () => {
+  test("does not opt API responses into cross-origin access", async () => {
     const { db, dispatcher } = buildRouteContext();
     insertAutomation(db, "auto-cors");
     const req = makeRequest("GET", "/api/automations");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res).not.toBeNull();
     const cors = await extractCorsHeaders(res!);
-    expect(cors["access-control-allow-origin"]).toBe("*");
-    expect(cors["access-control-allow-methods"]).toBeDefined();
-    expect(cors["access-control-allow-headers"]).toBeDefined();
-    expect(cors["access-control-max-age"]).toBeDefined();
+    expect(cors["access-control-allow-origin"]).toBeUndefined();
+    expect(cors["access-control-allow-methods"]).toBeUndefined();
+    expect(cors["access-control-allow-headers"]).toBeUndefined();
+    expect(cors["access-control-max-age"]).toBeUndefined();
   });
 });
 
@@ -279,16 +300,19 @@ describe("Route handlers — automations", () => {
     const req = makeRequest("GET", "/api/automations");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(2);
   });
 
   test("POST /api/automations — create", async () => {
     const def = makeDefinition();
-    const req = makeRequest("POST", "/api/automations", { name: "New Auto", definition: def });
+    const req = makeRequest("POST", "/api/automations", {
+      name: "New Auto",
+      definition: def,
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(201);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.name).toBe("New Auto");
     expect(body.id).toBeDefined();
   });
@@ -314,7 +338,7 @@ describe("Route handlers — automations", () => {
     const req = makeRequest("GET", "/api/automations/auto-get");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.id).toBe("auto-get");
   });
 
@@ -328,16 +352,20 @@ describe("Route handlers — automations", () => {
     insertAutomation(db, "auto-update");
     const def = makeDefinition();
     def.settings.runTimeoutSec = 7200;
-    const req = makeRequest("PUT", "/api/automations/auto-update", { definition: def });
+    const req = makeRequest("PUT", "/api/automations/auto-update", {
+      definition: def,
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.id).toBe("auto-update");
   });
 
   test("PUT /api/automations/:id — not found returns 404", async () => {
     const def = makeDefinition();
-    const req = makeRequest("PUT", "/api/automations/no-such", { definition: def });
+    const req = makeRequest("PUT", "/api/automations/no-such", {
+      definition: def,
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(404);
   });
@@ -354,7 +382,7 @@ describe("Route handlers — automations", () => {
     const req = makeRequest("DELETE", "/api/automations/auto-del");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.success).toBe(true);
   });
 
@@ -369,17 +397,20 @@ describe("Route handlers — automations", () => {
     const req = makeRequest("POST", "/api/automations/auto-act/activate");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.activeVersionId).toBeDefined();
   });
 
   test("POST /api/automations/:id/deactivate — deactivate", async () => {
     const versionId = insertAutomation(db, "auto-deact");
-    db.prepare("UPDATE automations SET active_version_id = ? WHERE id = ?").run(versionId, "auto-deact");
+    db.prepare("UPDATE automations SET active_version_id = ? WHERE id = ?").run(
+      versionId,
+      "auto-deact",
+    );
     const req = makeRequest("POST", "/api/automations/auto-deact/deactivate");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.activeVersionId).toBeNull();
   });
 });
@@ -396,14 +427,18 @@ describe("Route handlers — runs", () => {
 
   test("POST /api/automations/:id/run — run automation", async () => {
     insertAutomation(db, "auto-run");
-    const req = makeRequest("POST", "/api/automations/auto-run/run", { mode: "manual" });
+    const req = makeRequest("POST", "/api/automations/auto-run/run", {
+      mode: "manual",
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res).not.toBeNull();
-    expect([200, 201]).toContain(res!.status);
+    expect([200, 201, 202]).toContain(res!.status);
   });
 
   test("POST /api/automations/:id/run — not found returns 404", async () => {
-    const req = makeRequest("POST", "/api/automations/no-such/run", { mode: "manual" });
+    const req = makeRequest("POST", "/api/automations/no-such/run", {
+      mode: "manual",
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(404);
   });
@@ -436,7 +471,7 @@ describe("Route handlers — runs", () => {
     const req = makeRequest("GET", "/api/runs");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(1);
   });
 
@@ -467,7 +502,7 @@ describe("Route handlers — runs", () => {
     const req = makeRequest("GET", "/api/runs?automationId=auto-a");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(1);
     expect(body[0].automationId).toBe("auto-a");
   });
@@ -488,7 +523,7 @@ describe("Route handlers — runs", () => {
     const req = makeRequest("GET", "/api/runs/run-get-1");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.id).toBe("run-get-1");
   });
 
@@ -509,7 +544,7 @@ describe("Route handlers — runs", () => {
       status: "success",
       attempt: 0,
       simulated: false,
-      input: null,
+      input: [],
       output: [{ json: { data: "test" } }],
       pinned: false,
       startedAt: now,
@@ -530,13 +565,13 @@ describe("Route handlers — runs", () => {
     const req = makeRequest("POST", "/api/runs/run-rerun-1/rerun-from/node-1");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res).not.toBeNull();
-    expect([200, 201]).toContain(res!.status);
+    expect([200, 201, 202]).toContain(res!.status);
   });
 
-  test("POST /api/runs/:id/cancel — returns 501", async () => {
+  test("POST /api/runs/:id/cancel — unknown run returns 404", async () => {
     const req = makeRequest("POST", "/api/runs/run-cancel/cancel");
     const res = await handleApiRoute(db, dispatcher, req);
-    expect(res!.status).toBe(501);
+    expect(res!.status).toBe(404);
   });
 });
 
@@ -556,9 +591,18 @@ describe("Route handlers — credentials", () => {
   test("GET /api/credentials — list (with vault)", async () => {
     vault.storeCredential("My Cred", "oauth2", { token: "abc" });
     const req = makeRequest("GET", "/api/credentials");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(1);
   });
 
@@ -575,66 +619,145 @@ describe("Route handlers — credentials", () => {
       type: "api-key",
       values: { key: "sk-test" },
     });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(201);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.id).toBeDefined();
     expect(body.name).toBe("New Cred");
   });
 
   test("POST /api/credentials — missing fields returns 400", async () => {
     const req = makeRequest("POST", "/api/credentials", { name: "Partial" });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(400);
   });
 
   test("GET /api/credentials/:id — get (with vault)", async () => {
-    const id = vault.storeCredential("Fetch Cred", "basic", { user: "admin", pass: "secret" });
+    const id = vault.storeCredential("Fetch Cred", "basic", {
+      user: "admin",
+      pass: "secret",
+    });
     const req = makeRequest("GET", `/api/credentials/${id}`);
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.id).toBe(id);
     expect(body.name).toBe("Fetch Cred");
   });
 
   test("GET /api/credentials/:id — not found returns 404", async () => {
     const req = makeRequest("GET", "/api/credentials/no-such");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(404);
   });
 
   test("PUT /api/credentials/:id — update (with vault)", async () => {
-    const id = vault.storeCredential("Update Cred", "basic", { user: "old", pass: "old" });
+    const id = vault.storeCredential("Update Cred", "basic", {
+      user: "old",
+      pass: "old",
+    });
     const req = makeRequest("PUT", `/api/credentials/${id}`, {
       values: { user: "new", pass: "new" },
     });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
-    expect(body.values.user).toBe("new");
+    const body = (await res!.json()) as any;
+    expect(body.values).toBeUndefined();
+    expect(vault.getCredential(body.id).values.user).toBe("new");
   });
 
   test("PUT /api/credentials/:id — not found returns 404", async () => {
     const req = makeRequest("PUT", "/api/credentials/no-such", {
       values: { key: "val" },
     });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(404);
   });
 
   test("DELETE /api/credentials/:id — delete (with vault)", async () => {
     const id = vault.storeCredential("Del Cred", "api-key", { token: "abc" });
     const req = makeRequest("DELETE", `/api/credentials/${id}`);
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.success).toBe(true);
   });
 
   test("DELETE /api/credentials/:id — not found returns 404", async () => {
     const req = makeRequest("DELETE", "/api/credentials/no-such");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, vault);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      vault,
+    );
     expect(res!.status).toBe(404);
   });
 });
@@ -656,9 +779,19 @@ describe("Route handlers — env", () => {
   test("GET /api/env — list (with envResolver)", async () => {
     envResolver.setVar("global", null, "API_URL", "https://example.com", false);
     const req = makeRequest("GET", "/api/env");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any[];
+    const body = (await res!.json()) as any[];
     expect(body).toHaveLength(1);
   });
 
@@ -677,36 +810,86 @@ describe("Route handlers — env", () => {
       value: "hello",
       isSecret: false,
     });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(201);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.success).toBe(true);
   });
 
   test("POST /api/env — missing required fields returns 400", async () => {
     const req = makeRequest("POST", "/api/env", { key: "no-scope" });
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(400);
   });
 
   test("DELETE /api/env — delete (with envResolver)", async () => {
     envResolver.setVar("global", null, "DEL_ME", "bye", false);
     const req = makeRequest("DELETE", "/api/env?scope=global&key=DEL_ME");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.success).toBe(true);
   });
 
   test("DELETE /api/env — missing scope or key returns 400", async () => {
     const req = makeRequest("DELETE", "/api/env?scope=global");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(400);
   });
 
   test("DELETE /api/env — not found returns 404", async () => {
     const req = makeRequest("DELETE", "/api/env?scope=global&key=NO_VAR");
-    const res = await handleApiRoute(db, dispatcher, req, undefined, undefined, undefined, appDb, undefined, envResolver);
+    const res = await handleApiRoute(
+      db,
+      dispatcher,
+      req,
+      undefined,
+      undefined,
+      undefined,
+      appDb,
+      undefined,
+      envResolver,
+    );
     expect(res!.status).toBe(404);
   });
 });
@@ -725,15 +908,17 @@ describe("Route handlers — settings", () => {
     const req = makeRequest("GET", "/api/settings");
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.aiModel).toBeDefined();
   });
 
   test("PUT /api/settings — update", async () => {
-    const req = makeRequest("PUT", "/api/settings", { aiModel: "openai/gpt-4o" });
+    const req = makeRequest("PUT", "/api/settings", {
+      aiModel: "openai/gpt-4o",
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(200);
-    const body = await res!.json() as any;
+    const body = (await res!.json()) as any;
     expect(body.aiModel).toBe("openai/gpt-4o");
   });
 });
@@ -761,7 +946,9 @@ describe("Route handlers — agents", () => {
   });
 
   test("PUT /api/agents/:id/tags — without hub returns 400", async () => {
-    const req = makeRequest("PUT", "/api/agents/agent-1/tags", { tags: ["prod"] });
+    const req = makeRequest("PUT", "/api/agents/agent-1/tags", {
+      tags: ["prod"],
+    });
     const res = await handleApiRoute(db, dispatcher, req);
     expect(res!.status).toBe(400);
   });

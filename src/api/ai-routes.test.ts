@@ -1,3 +1,15 @@
+import { createHash } from "node:crypto";
+const baseRevision = (db: Database, id: string) =>
+  createHash("sha256")
+    .update(
+      (
+        db.query("SELECT draft_json FROM automations WHERE id=?").get(id) as {
+          draft_json: string;
+        }
+      ).draft_json,
+    )
+    .digest("hex");
+import { getAiSettings, setAiSettings } from "../core/ai-settings.js";
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
 import { handleAiChat, handleAiApply, handleAiModels } from "./ai-routes.js";
@@ -41,13 +53,17 @@ function insertAutomation(db: Database, id: string) {
   const def = {
     schemaVersion: 1,
     name: "Test",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
     nodes: [],
     edges: [],
   };
   const defJson = JSON.stringify(def);
   db.prepare(
-    "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(id, "Test", defJson, JSON.stringify(def.settings), now, now);
 }
 
@@ -72,8 +88,11 @@ describe("handleAiChat", () => {
     expect(body.error).toContain("API key not configured");
   });
 
-  test("returns 500 for messages without API connectivity", async () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-fake-key");
+  test("returns 400 for failed AI request", async () => {
+    setAiSettings(db, {
+      apiKey: "sk-fake-key",
+      endpoint: "http://127.0.0.1:1",
+    });
 
     const req = new Request("http://localhost/api/ai/chat", {
       method: "POST",
@@ -83,7 +102,7 @@ describe("handleAiChat", () => {
       }),
     });
     const res = await handleAiChat(db, req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
   });
 });
 
@@ -124,6 +143,7 @@ describe("handleAiApply", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         automationId: "auto-apply",
+        baseRevision: baseRevision(db, "auto-apply"),
         diffs,
       }),
     });
@@ -161,6 +181,7 @@ describe("handleAiApply", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         automationId: "auto-add",
+        baseRevision: baseRevision(db, "auto-add"),
         diffs,
       }),
     });
@@ -197,29 +218,43 @@ describe("handleAiModels", () => {
   });
 
   test("returns models from mock OpenRouter", async () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-test-key");
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_endpoint", mockUrl);
+    setAiSettings(db, { apiKey: "sk-test-key" });
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+      "ai_endpoint",
+      mockUrl,
+    );
 
-    mockServer.setModelList(["openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "meta/llama-3"]);
+    mockServer.setModelList([
+      "openai/gpt-4o-mini",
+      "anthropic/claude-3.5-sonnet",
+      "meta/llama-3",
+    ]);
 
     const req = new Request("http://localhost/api/ai/models");
     const res = await handleAiModels(db, req);
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.models).toBeDefined();
-    expect(body.models.sort()).toEqual(["anthropic/claude-3.5-sonnet", "meta/llama-3", "openai/gpt-4o-mini"]);
+    expect(body.models.sort()).toEqual([
+      "anthropic/claude-3.5-sonnet",
+      "meta/llama-3",
+      "openai/gpt-4o-mini",
+    ]);
   });
 
   test("returns 500 when API fails", async () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-fail-key");
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_endpoint", mockUrl);
+    setAiSettings(db, { apiKey: "sk-fail-key" });
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+      "ai_endpoint",
+      mockUrl,
+    );
 
     mockServer.setFailure(500);
 
     const req = new Request("http://localhost/api/ai/models");
     const res = await handleAiModels(db, req);
     expect(res.status).toBe(500);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.error).toBeDefined();
   });
 });

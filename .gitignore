@@ -14,3 +14,13 @@ ap
 desktop/src-tauri/target/
 test-results/
 playwright-report/
+
+desktop/bridge/target/
+desktop/src-tauri/binaries/
+*.db.key
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/ap.gz
+/core
+/core.*
+/desktop/core
+/desktop/core.*

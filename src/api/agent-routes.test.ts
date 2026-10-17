@@ -1,6 +1,11 @@
 import { describe, test, expect, beforeEach, afterAll } from "bun:test";
 import { Database } from "bun:sqlite";
-import { listAgents, createJoinToken, updateAgentTags, triggerAgentUpdate } from "./agent-routes.js";
+import {
+  listAgents,
+  createJoinToken,
+  updateAgentTags,
+  triggerAgentUpdate,
+} from "./agent-routes.js";
 import { WssHub } from "./wss-hub.js";
 
 const MIGRATION_SQL = `
@@ -51,7 +56,7 @@ describe("listAgents", () => {
     ).run("agent-1", "Test Agent", now, now);
 
     const res = listAgents(db, hub);
-    const body = await res.json() as any[];
+    const body = (await res.json()) as any[];
     expect(body).toHaveLength(1);
     expect(body[0].id).toBe("agent-1");
     expect(body[0].name).toBe("Test Agent");
@@ -67,13 +72,23 @@ describe("listAgents", () => {
 
     const hubNoDb = new WssHub();
     const ws = createMockWs();
-    hubNoDb.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "Online Agent",
-      version: "2.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "test-token",
-    }));
+    hubNoDb.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "Online Agent",
+        version: "2.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "test-token",
+      }),
+    );
     const onlineAgentId = JSON.parse(ws.sent[0]).agentId;
 
     db.prepare(
@@ -81,7 +96,7 @@ describe("listAgents", () => {
     ).run(onlineAgentId, "Online Agent", now, now);
 
     const res = listAgents(db, hubNoDb);
-    const body = await res.json() as any[];
+    const body = (await res.json()) as any[];
     expect(body.length).toBeGreaterThanOrEqual(2);
     const onlineAgent = body.find((a: any) => a.name === "Online Agent");
     expect(onlineAgent).toBeDefined();
@@ -100,7 +115,7 @@ describe("createJoinToken", () => {
   test("creates token with defaults", async () => {
     const res = createJoinToken(db, {});
     expect(res.status).toBe(201);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.token).toBeDefined();
     expect(body.usesLeft).toBe(1);
     expect(body.expiresAt).toBeDefined();
@@ -109,19 +124,22 @@ describe("createJoinToken", () => {
   test("creates token with custom uses and ttl", async () => {
     const res = createJoinToken(db, { uses: 5, ttlHours: 24 });
     expect(res.status).toBe(201);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.usesLeft).toBe(5);
     expect(body.expiresAt).toBeDefined();
   });
 
   test("token is stored in database", async () => {
     const res = createJoinToken(db, { uses: 3 });
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     const { createHash } = await import("node:crypto");
     const tokenHash = createHash("sha256").update(body.token).digest("hex");
-    const row = db.query<{ uses_left: number; expires_at: string }, [string]>(
-      "SELECT uses_left, expires_at FROM join_tokens WHERE token_hash = ?",
-    ).get(tokenHash);
+    const row = db
+      .query<
+        { uses_left: number; expires_at: string },
+        [string]
+      >("SELECT uses_left, expires_at FROM join_tokens WHERE token_hash = ?")
+      .get(tokenHash);
     expect(row).not.toBeNull();
     expect(row!.uses_left).toBe(3);
   });
@@ -144,18 +162,23 @@ describe("updateAgentTags", () => {
 
     const res = updateAgentTags(db, hub, "agent-tag", ["prod", "web"]);
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.id).toBe("agent-tag");
     expect(body.tags).toEqual(["prod", "web"]);
 
-    const row = db.query<{ tags_json: string }, [string]>("SELECT tags_json FROM agents WHERE id = ?").get("agent-tag")!;
+    const row = db
+      .query<
+        { tags_json: string },
+        [string]
+      >("SELECT tags_json FROM agents WHERE id = ?")
+      .get("agent-tag")!;
     expect(JSON.parse(row.tags_json)).toEqual(["prod", "web"]);
   });
 
   test("returns 404 for nonexistent agent", async () => {
     const res = updateAgentTags(db, hub, "no-such-agent", ["tag"]);
     expect(res.status).toBe(404);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.error).toBe("Agent not found");
   });
 });
@@ -171,35 +194,50 @@ describe("triggerAgentUpdate", () => {
     hub.close();
   });
 
-  test("returns 404 when agent not connected", async () => {
+  test("refuses unsigned updates for disconnected agents", async () => {
     const res = triggerAgentUpdate(hub, "no-such-agent");
-    expect(res.status).toBe(404);
-    const body = await res.json() as any;
-    expect(body.error).toBe("Agent not connected");
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as any;
+    expect(body.error).toContain("disabled");
   });
 
-  test("sends self_update via hub and returns 202 when agent connected", async () => {
+  test("refuses unsigned updates for connected agents", async () => {
     const ws = createMockWs();
-    hub.handleMessage(ws, JSON.stringify({
-      type: "hello",
-      name: "Update Agent",
-      version: "1.0.0",
-      caps: { os: "linux", arch: "x64", display: "none", tools: [], screen: false, input: "none" },
-      token: "test-token",
-    }));
+    hub.handleMessage(
+      ws,
+      JSON.stringify({
+        type: "hello",
+        name: "Update Agent",
+        version: "1.0.0",
+        caps: {
+          os: "linux",
+          arch: "x64",
+          display: "none",
+          tools: [],
+          screen: false,
+          input: "none",
+        },
+        token: "test-token",
+      }),
+    );
     const agentId = JSON.parse(ws.sent[0]).agentId;
 
     const res = triggerAgentUpdate(hub, agentId);
-    expect(res.status).toBe(202);
-    const body = await res.json() as any;
-    expect(body.message).toBe("Update triggered");
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as any;
+    expect(body.error).toContain("disabled");
 
     const lastSent = JSON.parse(ws.sent[ws.sent.length - 1]);
-    expect(lastSent.type).toBe("self_update");
+    expect(lastSent.type).toBe("welcome");
   });
 });
 
-function createMockWs(data: { connectedAt: number; agentId: string | null } = { connectedAt: Date.now(), agentId: null }) {
+function createMockWs(
+  data: { connectedAt: number; agentId: string | null } = {
+    connectedAt: Date.now(),
+    agentId: null,
+  },
+) {
   const sent: string[] = [];
   return {
     data,

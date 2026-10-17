@@ -1,6 +1,10 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { AgentDispatcher } from "./dispatcher.js";
-import type { AgentDispatch, RunRecord, NodeExecutionRecord } from "../core/execution-engine.js";
+import type {
+  AgentDispatch,
+  RunRecord,
+  NodeExecutionRecord,
+} from "../core/execution-engine.js";
 
 function makeRun(id: string): RunRecord {
   return {
@@ -52,7 +56,10 @@ describe("AgentDispatcher", () => {
       send: (() => {}) as any,
     };
     dispatcher.registerAgent(fakeAgent);
-    const got = dispatcher.getAgentForTarget({ kind: "tag", value: "remote-1" });
+    const got = dispatcher.getAgentForTarget({
+      kind: "tag",
+      value: "remote-1",
+    });
     expect(got.agentId).toBe("local");
   });
 
@@ -102,24 +109,33 @@ describe("AgentDispatcher", () => {
     });
 
     test("returns local agent for machine target with value 'local'", () => {
-      const agent = dispatcher.getAgentForTarget({ kind: "machine", value: "local" });
+      const agent = dispatcher.getAgentForTarget({
+        kind: "machine",
+        value: "local",
+      });
       expect(agent.agentId).toBe("local");
     });
 
     test("returns local agent for machine target matching local agentId", () => {
       const local = dispatcher.getAgentForTarget({ kind: "local" });
-      const agent = dispatcher.getAgentForTarget({ kind: "machine", value: local.agentId });
+      const agent = dispatcher.getAgentForTarget({
+        kind: "machine",
+        value: local.agentId,
+      });
       expect(agent.agentId).toBe("local");
     });
 
     test("throws for unknown machine target", () => {
       expect(() =>
-        dispatcher.getAgentForTarget({ kind: "machine", value: "remote-x" })
+        dispatcher.getAgentForTarget({ kind: "machine", value: "remote-x" }),
       ).toThrow(/Remote agents not yet supported/);
     });
 
     test("returns local for tag target", () => {
-      const agent = dispatcher.getAgentForTarget({ kind: "tag", value: "prod" });
+      const agent = dispatcher.getAgentForTarget({
+        kind: "tag",
+        value: "prod",
+      });
       expect(agent.agentId).toBe("local");
     });
 
@@ -130,14 +146,16 @@ describe("AgentDispatcher", () => {
 
     test("throws for unknown target kind", () => {
       expect(() =>
-        dispatcher.getAgentForTarget({ kind: "unknown" as any })
+        dispatcher.getAgentForTarget({ kind: "unknown" as any }),
       ).toThrow(/Unknown target kind/);
     });
   });
 
   describe("resolveEnv", () => {
     test("returns empty object when no envResolver", () => {
-      expect(dispatcher.resolveEnv("local", "auto-1", "trigger.manual")).toEqual({});
+      expect(
+        dispatcher.resolveEnv("local", "auto-1", "trigger.manual"),
+      ).toEqual({});
     });
 
     test("delegates to envResolver when set", () => {
@@ -145,7 +163,9 @@ describe("AgentDispatcher", () => {
         resolveForExecution: () => ({ FOO: "bar" }),
       } as any;
       dispatcher.setEnvResolver(mockResolver);
-      expect(dispatcher.resolveEnv("local", "auto-1", "trigger.manual")).toEqual({ FOO: "bar" });
+      expect(
+        dispatcher.resolveEnv("local", "auto-1", "trigger.manual"),
+      ).toEqual({ FOO: "bar" });
     });
   });
 
@@ -156,10 +176,18 @@ describe("AgentDispatcher", () => {
 
     test("resolves credential refs via vault", () => {
       const mockVault = {
-        getCredentialByName: () => ({ id: "c1", name: "test", type: "api_key", values: { key: "secret123" } }),
+        getCredentialByName: () => ({
+          id: "c1",
+          name: "test",
+          type: "api_key",
+          values: { key: "secret123" },
+        }),
       } as any;
       dispatcher.setVault(mockVault);
-      const result = dispatcher.resolveSecrets("local", { type: "api_key", name: "test" });
+      const result = dispatcher.resolveSecrets("local", {
+        type: "api_key",
+        name: "test",
+      });
       expect(result.key).toBe("secret123");
     });
 
@@ -171,15 +199,19 @@ describe("AgentDispatcher", () => {
       expect(dispatcher.resolveSecrets("local", {})).toEqual({});
     });
 
-    test("returns empty when vault throws", () => {
+    test("fails closed when vault throws", () => {
       const mockVault = {
         getCredentialByName: () => {
           throw new Error("not found");
         },
       } as any;
       dispatcher.setVault(mockVault);
-      const result = dispatcher.resolveSecrets("local", { type: "api_key", name: "missing" });
-      expect(result).toEqual({});
+      expect(() =>
+        dispatcher.resolveSecrets("local", {
+          type: "api_key",
+          name: "missing",
+        }),
+      ).toThrow("not found");
     });
   });
 

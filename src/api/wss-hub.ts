@@ -1,4 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
+import { agentClientMessageSchema } from "../core/agent-protocol.js";
+import type { ArtifactStore } from "./artifacts.js";
+import { createHash, randomUUID, randomBytes } from "node:crypto";
 import type { ServerWebSocket } from "bun";
 import type { Database } from "bun:sqlite";
 import type {
@@ -29,6 +31,7 @@ interface AgentConnection {
 }
 
 interface PendingExecution {
+  agentId: string;
   resolve: (result: AgentNodeResultMessage) => void;
   reject: (err: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -41,6 +44,11 @@ const MISSED_BEATS_THRESHOLD = 2;
 const HEARTBEAT_CHECK_INTERVAL_MS = 20_000;
 
 export class WssHub {
+  artifactStore?: ArtifactStore;
+  private handshakes = new Map<
+    ServerWebSocket<WsData>,
+    ReturnType<typeof setTimeout>
+  >();
   private connections = new Map<string, AgentConnection>();
   private wsToAgent = new Map<ServerWebSocket<WsData>, string>();
   private pendingExecutions = new Map<string, PendingExecution>();
@@ -53,18 +61,38 @@ export class WssHub {
   }
 
   handleOpen(ws: ServerWebSocket<WsData>): void {
+    this.handshakes.set(
+      ws,
+      setTimeout(() => {
+        ws.close(4001, "Handshake timed out");
+        this.handshakes.delete(ws);
+      }, 10_000),
+    );
   }
 
-  handleMessage(ws: ServerWebSocket<WsData>, rawMessage: string | Buffer): void {
+  handleMessage(
+    ws: ServerWebSocket<WsData>,
+    rawMessage: string | Buffer,
+  ): void {
     try {
-      const data = typeof rawMessage === "string" ? rawMessage : String(rawMessage);
-      const msg = JSON.parse(data) as AgentClientMessage;
+      const data =
+        typeof rawMessage === "string" ? rawMessage : String(rawMessage);
+      if (data.length > 48 * 1024 * 1024) throw new Error("Message too large");
+      const msg = agentClientMessageSchema.parse(
+        JSON.parse(data),
+      ) as AgentClientMessage;
+      if (!msg || typeof msg !== "object" || typeof msg.type !== "string")
+        throw new Error("Invalid message");
 
       if (msg.type === "hello") {
+        if (ws.data.agentId) throw new Error("Already authenticated");
+        clearTimeout(this.handshakes.get(ws));
+        this.handshakes.delete(ws);
         const agentId = this.handleHello(ws, msg);
         if (agentId) {
           ws.data.agentId = agentId;
           this.wsToAgent.set(ws, agentId);
+          for (const handler of this.messageHandlers) handler(agentId, msg);
         }
         return;
       }
@@ -82,31 +110,73 @@ export class WssHub {
   }
 
   handleClose(ws: ServerWebSocket<WsData>): void {
+    clearTimeout(this.handshakes.get(ws));
+    this.handshakes.delete(ws);
     const agentId = this.wsToAgent.get(ws) ?? ws.data.agentId;
-    if (agentId) {
+    if (agentId && this.connections.get(agentId)?.ws === ws) {
       this.handleDisconnect(agentId);
-      this.wsToAgent.delete(ws);
     }
+    this.wsToAgent.delete(ws);
   }
 
-  private handleHello(ws: ServerWebSocket<WsData>, msg: AgentHelloMessage): string | null {
+  private handleHello(
+    ws: ServerWebSocket<WsData>,
+    msg: AgentHelloMessage,
+  ): string | null {
+    if (
+      typeof msg.token !== "string" ||
+      typeof msg.name !== "string" ||
+      !msg.caps ||
+      !Array.isArray(msg.caps.tools)
+    )
+      throw new Error("Invalid hello");
     const tokenHash = createHash("sha256").update(msg.token).digest("hex");
-
+    let agentId = randomUUID() as string;
+    let identityToken: string | undefined;
+    let tags: string[] = [];
     if (this.db) {
-      const tokenRow = this.db.query<{ token_hash: string; uses_left: number; expires_at: string }, [string]>(
-        "SELECT * FROM join_tokens WHERE token_hash = ? AND uses_left > 0 AND expires_at > datetime('now')",
-      ).get(tokenHash);
-
-      if (!tokenRow) {
-        ws.close(4003, "Invalid or expired join token");
-        return null;
+      const identity = this.db
+        .query<
+          { id: string; tags_json: string },
+          [string]
+        >("SELECT id,tags_json FROM agents WHERE identity_hash=? AND is_local=0")
+        .get(tokenHash);
+      if (identity) {
+        agentId = identity.id;
+        tags = JSON.parse(identity.tags_json);
+      } else {
+        const accepted = this.db
+          .prepare(
+            "UPDATE join_tokens SET uses_left=uses_left-1 WHERE token_hash=? AND uses_left>0 AND expires_at>?",
+          )
+          .run(tokenHash, new Date().toISOString());
+        if (!accepted.changes) {
+          ws.close(4003, "Invalid or expired agent credential");
+          return null;
+        }
+        identityToken = randomBytes(32).toString("hex");
+        this.db
+          .prepare(
+            "INSERT INTO agents(id,name,is_local,identity_hash) VALUES(?,?,0,?)",
+          )
+          .run(
+            agentId,
+            msg.name,
+            createHash("sha256").update(identityToken).digest("hex"),
+          );
       }
-
-      this.db.prepare("UPDATE join_tokens SET uses_left = uses_left - 1 WHERE token_hash = ?").run(tokenHash);
+      this.db
+        .prepare(
+          "UPDATE agents SET name=?,capabilities_json=?,version=?,status='online',last_seen_at=? WHERE id=?",
+        )
+        .run(
+          msg.name,
+          JSON.stringify(msg.caps),
+          msg.version,
+          new Date().toISOString(),
+          agentId,
+        );
     }
-
-    let agentId: string = randomUUID();
-
     const conn: AgentConnection = {
       ws,
       agentId,
@@ -115,29 +185,9 @@ export class WssHub {
       capabilities: msg.caps,
       lastHeartbeat: Date.now(),
       connectedAt: Date.now(),
-      tags: [],
+      tags,
       missedBeats: 0,
     };
-
-    if (this.db) {
-      const now = new Date().toISOString();
-      const existing = this.db.query<{ id: string }, [string]>(
-        "SELECT id FROM agents WHERE name = ? AND is_local = 0",
-      ).get(msg.name);
-
-      if (existing) {
-        this.db.prepare(
-          "UPDATE agents SET capabilities_json = ?, version = ?, status = 'online', last_seen_at = ? WHERE id = ?",
-        ).run(JSON.stringify(msg.caps), msg.version, now, existing.id);
-        agentId = existing.id;
-        conn.agentId = existing.id;
-      } else {
-        this.db.prepare(
-          "INSERT INTO agents (id, name, is_local, tags_json, capabilities_json, version, status, last_seen_at, enrolled_at) VALUES (?, ?, 0, '[]', ?, ?, 'online', ?, ?)",
-        ).run(agentId, msg.name, JSON.stringify(msg.caps), msg.version, now, now);
-      }
-    }
-
     const existingConn = this.connections.get(agentId);
     if (existingConn) {
       existingConn.ws.close(4005, "Replaced by new connection");
@@ -148,6 +198,7 @@ export class WssHub {
     const welcome: AgentServerMessage & { type: "welcome" } = {
       type: "welcome",
       agentId,
+      identityToken,
     };
     ws.send(JSON.stringify(welcome));
 
@@ -168,7 +219,10 @@ export class WssHub {
         conn.missedBeats = 0;
 
         if (this.db) {
-          this.db.prepare("UPDATE agents SET status = 'online', last_seen_at = ? WHERE id = ?")
+          this.db
+            .prepare(
+              "UPDATE agents SET status = 'online', last_seen_at = ? WHERE id = ?",
+            )
             .run(new Date().toISOString(), agentId);
         }
         break;
@@ -177,14 +231,15 @@ export class WssHub {
       case "capabilities": {
         conn.capabilities = msg.caps;
         if (this.db) {
-          this.db.prepare("UPDATE agents SET capabilities_json = ? WHERE id = ?")
+          this.db
+            .prepare("UPDATE agents SET capabilities_json = ? WHERE id = ?")
             .run(JSON.stringify(msg.caps), agentId);
         }
         break;
       }
 
       case "node_result": {
-        this.handleNodeResult(msg);
+        this.handleNodeResult(agentId, msg);
         break;
       }
 
@@ -202,9 +257,9 @@ export class WssHub {
     }
   }
 
-  private handleNodeResult(msg: AgentNodeResultMessage): void {
+  private handleNodeResult(agentId: string, msg: AgentNodeResultMessage): void {
     const pending = this.pendingExecutions.get(msg.nodeExecutionId);
-    if (!pending) return;
+    if (!pending || pending.agentId !== agentId) return;
 
     clearTimeout(pending.timer);
     this.pendingExecutions.delete(msg.nodeExecutionId);
@@ -213,9 +268,20 @@ export class WssHub {
 
   private handleDisconnect(agentId: string): void {
     this.connections.delete(agentId);
+    for (const [id, pending] of this.pendingExecutions)
+      if (pending.agentId === agentId) {
+        clearTimeout(pending.timer);
+        pending.reject(
+          new Error("Agent disconnected; execution outcome is uncertain"),
+        );
+        this.pendingExecutions.delete(id);
+      }
 
     if (this.db) {
-      this.db.prepare("UPDATE agents SET status = 'offline', last_seen_at = ? WHERE id = ?")
+      this.db
+        .prepare(
+          "UPDATE agents SET status = 'offline', last_seen_at = ? WHERE id = ?",
+        )
         .run(new Date().toISOString(), agentId);
     }
   }
@@ -229,7 +295,9 @@ export class WssHub {
         if (elapsed > HEARTBEAT_TIMEOUT_MS) {
           conn.missedBeats++;
           if (conn.missedBeats >= MISSED_BEATS_THRESHOLD) {
-            console.log(`Agent ${agentId} missed ${conn.missedBeats} heartbeats, marking offline`);
+            console.log(
+              `Agent ${agentId} missed ${conn.missedBeats} heartbeats, marking offline`,
+            );
             conn.ws.close(4004, "Heartbeat timeout");
             this.handleDisconnect(agentId);
           }
@@ -252,7 +320,11 @@ export class WssHub {
     return true;
   }
 
-  dispatchToAgent(agentId: string, msg: AgentDispatchMessage, timeoutSec: number): Promise<AgentNodeResultMessage> {
+  dispatchToAgent(
+    agentId: string,
+    msg: AgentDispatchMessage,
+    timeoutSec: number,
+  ): Promise<AgentNodeResultMessage> {
     return new Promise((resolve, reject) => {
       const conn = this.connections.get(agentId);
       if (!conn) {
@@ -267,10 +339,19 @@ export class WssHub {
           nodeExecutionId: msg.nodeExecutionId,
         };
         this.broadcastToAgent(agentId, cancelMsg);
-        reject(new Error(`Dispatch to agent ${agentId} timed out after ${timeoutSec}s`));
+        reject(
+          new Error(
+            `Dispatch to agent ${agentId} timed out after ${timeoutSec}s`,
+          ),
+        );
       }, timeoutSec * 1000);
 
-      this.pendingExecutions.set(msg.nodeExecutionId, { resolve, reject, timer });
+      this.pendingExecutions.set(msg.nodeExecutionId, {
+        agentId,
+        resolve,
+        reject,
+        timer,
+      });
 
       this.broadcastToAgent(agentId, msg);
     });
@@ -278,6 +359,18 @@ export class WssHub {
 
   onMessage(handler: MessageHandler): void {
     this.messageHandlers.push(handler);
+  }
+
+  revokeAgent(agentId: string): void {
+    this.db
+      ?.prepare(
+        "UPDATE agents SET identity_hash=NULL WHERE id=? AND is_local=0",
+      )
+      .run(agentId);
+    const ws = this.connections.get(agentId)?.ws;
+    ws?.close(4003, "Agent revoked");
+    ws?.terminate?.();
+    this.handleDisconnect(agentId);
   }
 
   getAgentConnection(agentId: string): AgentConnection | undefined {
@@ -309,12 +402,18 @@ export class WssHub {
     }
 
     if (this.db) {
-      this.db.prepare("UPDATE agents SET tags_json = ? WHERE id = ?")
+      this.db
+        .prepare("UPDATE agents SET tags_json = ? WHERE id = ?")
         .run(JSON.stringify(tags), agentId);
     }
   }
 
   close(): void {
+    for (const [ws, timer] of this.handshakes) {
+      clearTimeout(timer);
+      ws.terminate?.();
+    }
+    this.handshakes.clear();
     if (this.heartbeatCheckTimer) {
       clearInterval(this.heartbeatCheckTimer);
       this.heartbeatCheckTimer = null;
@@ -322,6 +421,7 @@ export class WssHub {
 
     for (const conn of this.connections.values()) {
       conn.ws.close(1001, "Server shutting down");
+      conn.ws.terminate?.();
     }
     this.connections.clear();
 

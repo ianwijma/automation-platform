@@ -1,4 +1,11 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { recognizeOffline } from "../core/ocr.js";
+import { imageBytes, withImage } from "../core/image-input.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import { spawnAndCapture } from "../core/safe-spawn.js";
 
@@ -23,55 +30,36 @@ const definition: NodeDefinition<OcrParams> = {
   },
 
   async run(ctx: RunContext<OcrParams>): Promise<NodeItem[]> {
-    const { imagePath } = ctx.params;
-    const lang = ctx.params.lang ?? "eng";
-    const engine = ctx.params.engine ?? "tesseract";
-
-    if (engine === "tesseract") {
-      const { exitCode, stdout, stderr } = await spawnAndCapture({
-        cmd: ["tesseract", imagePath, "stdout", "-l", lang],
-      });
-
-      if (exitCode !== 0) {
-        throw new Error(`Tesseract failed (exit ${exitCode}): ${stderr}`);
-      }
-
-      const confidenceMatch = stderr.match(/(\d+)\s*$/m);
-      const confidence = confidenceMatch ? parseInt(confidenceMatch[1], 10) : 0;
-
+    const lang = ctx.params.lang || "eng";
+    if (ctx.params.engine === "wasm" || !Bun.which("tesseract")) {
+      const image = await imageBytes(ctx, ctx.params.imagePath);
       return [
         {
           json: {
-            text: stdout,
-            confidence,
+            ...(await recognizeOffline(image.data, lang, ctx.signal)),
             lang,
+            engine: "wasm",
           },
         },
       ];
     }
-
-    if (engine === "wasm") {
-      try {
-        // @ts-expect-error optional dependency
-      const tesseractjs = await import("tesseract.js");
-        const worker = await tesseractjs.createWorker(lang);
-        const { data } = await worker.recognize(imagePath);
-        await worker.terminate();
-        return [
-          {
-            json: {
-              text: data.text,
-              confidence: data.confidence,
-              lang,
-            },
-          },
-        ];
-      } catch {
-        throw new Error("tesseract.js is not installed. Run: bun add tesseract.js");
-      }
-    }
-
-    throw new Error(`Unknown OCR engine: ${engine}`);
+    return withImage(ctx, ctx.params.imagePath, async (imagePath) => {
+      const result = await spawnAndCapture({
+        cmd: ["tesseract", imagePath, "stdout", "-l", lang, "tsv"],
+      });
+      if (result.exitCode !== 0)
+        throw new Error(`Tesseract failed: ${result.stderr}`);
+      const words = result.stdout
+        .split("\n")
+        .slice(1)
+        .map((line) => line.split("\t"))
+        .filter((c) => c.length >= 12 && Number(c[10]) >= 0 && c[11]?.trim());
+      const text = words.map((c) => c.slice(11).join("\t")).join(" ");
+      const confidence = words.length
+        ? words.reduce((sum, c) => sum + Number(c[10]), 0) / words.length
+        : 0;
+      return [{ json: { text, confidence, lang } }];
+    });
   },
 
   async simulate(ctx: RunContext<OcrParams>): Promise<SimulationReport> {

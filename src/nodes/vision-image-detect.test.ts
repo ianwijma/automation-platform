@@ -1,9 +1,16 @@
 import { describe, test, expect } from "bun:test";
-import type { RunContext, NodeItem, SimulationReport } from "../core/node-contract.js";
+import type {
+  RunContext,
+  NodeItem,
+  SimulationReport,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import "../nodes/index.js";
 
-function makeCtx(params: Record<string, unknown>, items: NodeItem[] = []): RunContext {
+function makeCtx(
+  params: Record<string, unknown>,
+  items: NodeItem[] = [],
+): RunContext {
   return {
     nodeId: "test-node",
     nodeName: "Test",
@@ -28,9 +35,9 @@ describe("vision.image.detect", () => {
     expect(def.version).toBe(1);
   });
 
-  test("requiredCapabilities includes screen", () => {
+  test("requires an image comparison tool", () => {
     expect(def.requiredCapabilities).toBeDefined();
-    expect(def.requiredCapabilities!.screen).toBe(true);
+    expect(def.requiredCapabilities!.tools).toContain("compare");
   });
 
   test("sideEffecting is false", () => {
@@ -39,10 +46,14 @@ describe("vision.image.detect", () => {
 
   test("simulate() returns SimulationReport with confidence", async () => {
     const ctx = makeCtx(
-      { template: "/tmp/button.png", confidence: 0.8, method: "template-matching" },
+      {
+        template: "/tmp/button.png",
+        confidence: 0.8,
+        method: "template-matching",
+      },
       [],
     );
-    const report = await def.simulate!(ctx) as SimulationReport;
+    const report = (await def.simulate!(ctx)) as SimulationReport;
     expect(report.description).toBe("Image Detect");
     expect(report.wouldDo).toContain("0.8");
   });

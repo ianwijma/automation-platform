@@ -1,3 +1,5 @@
+import { LocalAgent } from "./local-agent.js";
+import { isLoopback } from "../api/security.js";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentClientMessage,
@@ -7,7 +9,11 @@ import type {
   AgentNodeResultMessage,
   AgentCapabilitiesMessage,
 } from "../core/agent-protocol.js";
-import type { CapabilityReport, NodeItem, RunContext } from "../core/node-contract.js";
+import type {
+  CapabilityReport,
+  NodeItem,
+  RunContext,
+} from "../core/node-contract.js";
 import type { NodeDefinition } from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import { probeCapabilities } from "./capability-probe.js";
@@ -19,6 +25,8 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 type ConnectionState = "disconnected" | "connecting" | "connected";
 
 export class WssAgentClient {
+  private stopped = false;
+  private onIdentity?: (token: string) => void;
   private ws: WebSocket | null = null;
   private agentId: string | null = null;
   private token: string;
@@ -37,14 +45,23 @@ export class WssAgentClient {
     name: string;
     version: string;
     token: string;
+    onIdentity?: (token: string) => void;
   }) {
     this.name = options.name;
+    this.onIdentity = options.onIdentity;
     this.version = options.version;
     this.token = options.token;
     this.url = "";
   }
 
   async connect(url: string): Promise<void> {
+    const parsed = new URL(url);
+    if (
+      !["https:", "wss:"].includes(parsed.protocol) &&
+      !isLoopback(parsed.hostname)
+    )
+      throw new Error("Remote agents require TLS");
+    this.stopped = false;
     this.url = url;
     this.capabilities = await probeCapabilities();
 
@@ -80,7 +97,12 @@ export class WssAgentClient {
         }
       });
 
-      this.ws.addEventListener("close", () => {
+      this.ws.addEventListener("close", (event) => {
+        if ([4002, 4003, 4005].includes(event.code)) this.stopped = true;
+        if (this.state === "connecting")
+          reject(new Error("Agent authentication or connection failed"));
+        for (const ac of this.currentExecutions.values())
+          ac.abort(new Error("Disconnected"));
         this.state = "disconnected";
         this.stopHeartbeat();
         this.onDisconnected?.();
@@ -96,10 +118,17 @@ export class WssAgentClient {
     });
   }
 
-  private handleMessage(msg: AgentServerMessage, connectResolve?: (value: void) => void): void {
+  private handleMessage(
+    msg: AgentServerMessage,
+    connectResolve?: (value: void) => void,
+  ): void {
     switch (msg.type) {
       case "welcome": {
         this.agentId = msg.agentId;
+        if (msg.identityToken) {
+          this.token = msg.identityToken;
+          this.onIdentity?.(msg.identityToken);
+        }
         this.state = "connected";
         this.reconnectAttempt = 0;
         this.startHeartbeat();
@@ -142,13 +171,36 @@ export class WssAgentClient {
     }
   }
 
-  private async handleDispatch(msg: AgentServerMessage & { type: "dispatch" }): Promise<void> {
-    const { nodeExecutionId, nodeId, nodeType, params, items, secrets, env, runId, dryRun, timeoutSec } = msg;
+  private async handleDispatch(
+    msg: AgentServerMessage & { type: "dispatch" },
+  ): Promise<void> {
+    const {
+      nodeExecutionId,
+      nodeId,
+      nodeType,
+      params,
+      items,
+      secrets,
+      env,
+      runId,
+      dryRun,
+      timeoutSec,
+    } = msg;
 
+    if (msg.protocolVersion !== 2 || !Number.isInteger(msg.nodeVersion)) {
+      this.sendNodeResult({
+        type: "node_result",
+        nodeExecutionId,
+        status: "error",
+        error: "Incompatible dispatch protocol; upgrade the agent",
+        durationMs: 0,
+      });
+      return;
+    }
     const ac = new AbortController();
     this.currentExecutions.set(nodeExecutionId, ac);
 
-    const nodeDef = nodeRegistry.lookup(nodeType);
+    const nodeDef = nodeRegistry.lookup(nodeType, msg.nodeVersion);
     if (!nodeDef) {
       this.sendNodeResult({
         type: "node_result",
@@ -161,55 +213,75 @@ export class WssAgentClient {
       return;
     }
 
-    const ctx: RunContext = {
-      nodeId: nodeExecutionId,
-      nodeName: nodeDef.displayName,
-      params,
-      items,
-      env,
-      secrets,
-      state: {
-        get: () => undefined,
-        set: () => {},
-      },
-      now: new Date(),
-      agentId: this.agentId ?? "unknown",
-      runId,
-      dryRun,
-    };
-
+    const local = new LocalAgent();
+    local.agentId = this.agentId ?? "unknown";
+    const state = { ...(msg.state ?? {}) },
+      stateWrites: Record<string, unknown> = {};
+    const artifacts: NonNullable<AgentNodeResultMessage["artifacts"]> = [];
     const start = Date.now();
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-
     try {
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error("Execution timed out")), timeoutSec * 1000);
-      });
-
-      const execPromise = dryRun && nodeDef.simulate
-        ? nodeDef.simulate(ctx).then((report) => report.data ?? [])
-        : nodeDef.run(ctx);
-
-      const result = await Promise.race([execPromise, timeoutPromise]);
-
-      if (timeoutId) clearTimeout(timeoutId);
-
+      const result = await local.send(
+        nodeExecutionId,
+        nodeDef,
+        params,
+        items,
+        secrets,
+        env,
+        dryRun,
+        timeoutSec,
+        {
+          get: (key) => state[key],
+          set: (key, value) => {
+            state[key] = value;
+            stateWrites[key] = value;
+          },
+        },
+        runId,
+        msg.automationId ?? "unknown",
+        {
+          nodeId,
+          nodeName: nodeDef.displayName,
+          stateSnapshot: state,
+          actionTarget: msg.actionTarget,
+          inputs: msg.inputs ?? {},
+          signal: ac.signal,
+          artifacts: {
+            async read(ref) {
+              const data = msg.artifactData?.[ref.$artifact];
+              if (!data) throw new Error("Artifact unavailable");
+              return Buffer.from(data, "base64");
+            },
+            async store(data, mime, name) {
+              const bytes = Buffer.from(data as Uint8Array);
+              if (bytes.length > 32 * 1024 * 1024)
+                throw new Error("Artifact too large");
+              const id = createHash("sha256").update(bytes).digest("hex");
+              artifacts.push({
+                id,
+                mime,
+                size: bytes.length,
+                name,
+                data: bytes.toString("base64"),
+              });
+              return { $artifact: id, mime, size: bytes.length, name };
+            },
+          },
+        },
+      );
       this.sendNodeResult({
         type: "node_result",
         nodeExecutionId,
-        status: "success",
-        items: result,
-        durationMs: Date.now() - start,
+        status: result.error ? "error" : "success",
+        ...result,
+        stateWrites: result.error ? undefined : stateWrites,
+        artifacts: result.error ? undefined : artifacts,
       });
-    } catch (err: any) {
-      if (timeoutId) clearTimeout(timeoutId);
-
-      const status = ac.signal.aborted ? "cancelled" : (err?.message?.includes("timed out") ? "timeout" : "error");
+    } catch (error) {
       this.sendNodeResult({
         type: "node_result",
         nodeExecutionId,
-        status,
-        error: err?.message ?? String(err),
+        status: ac.signal.aborted ? "cancelled" : "error",
+        error: String(error),
         durationMs: Date.now() - start,
       });
     } finally {
@@ -217,41 +289,13 @@ export class WssAgentClient {
     }
   }
 
-  private async handleSelfUpdate(url: string, expectedSha256: string): Promise<void> {
-    try {
-      console.log("Downloading update...");
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Download failed: ${response.status}`);
-      }
-
-      const data = await response.arrayBuffer();
-      const buffer = Buffer.from(data);
-
-      const actualSha256 = createHash("sha256").update(buffer).digest("hex");
-      if (actualSha256 !== expectedSha256) {
-        throw new Error(`SHA256 mismatch: expected ${expectedSha256}, got ${actualSha256}`);
-      }
-
-      const tmpPath = `/tmp/ap-agent-update-${Date.now()}`;
-      const { writeFileSync, renameSync, chmodSync } = await import("node:fs");
-
-      writeFileSync(tmpPath, buffer);
-      chmodSync(tmpPath, 0o755);
-
-      const currentExe = process.execPath;
-      renameSync(tmpPath, currentExe);
-
-      console.log("Update applied, restarting...");
-      Bun.spawn({
-        cmd: [currentExe, ...process.argv.slice(1)],
-        env: process.env,
-        stdio: ["inherit", "inherit", "inherit"],
-      });
-      process.exit(0);
-    } catch (err: any) {
-      console.error("Self-update failed:", err?.message ?? err);
-    }
+  private async handleSelfUpdate(
+    url: string,
+    expectedSha256: string,
+  ): Promise<void> {
+    throw new Error(
+      "Self-update is disabled until verified releases and rollback are available; install a verified package manually",
+    );
   }
 
   private sendNodeResult(msg: AgentNodeResultMessage): void {
@@ -282,10 +326,15 @@ export class WssAgentClient {
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) return;
+    if (this.stopped || this.reconnectTimer) return;
 
-    const delay = Math.min(BASE_RECONNECT_DELAY_MS * (this.reconnectAttempt + 1), MAX_RECONNECT_DELAY_MS);
-    console.log(`Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempt + 1})`);
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY_MS * (this.reconnectAttempt + 1),
+      MAX_RECONNECT_DELAY_MS,
+    );
+    console.log(
+      `Reconnecting in ${delay / 1000}s (attempt ${this.reconnectAttempt + 1})`,
+    );
 
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
@@ -310,6 +359,9 @@ export class WssAgentClient {
   }
 
   disconnect(): void {
+    this.stopped = true;
+    for (const ac of this.currentExecutions.values())
+      ac.abort(new Error("Disconnected"));
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);

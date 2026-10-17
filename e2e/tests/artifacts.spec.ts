@@ -1,82 +1,100 @@
-import { test, expect } from "../fixtures/base.js";
-
+import { test, expect, waitForRun } from "../fixtures/base.js";
+import { SIMPLE_MANUAL_COMMAND } from "../fixtures/test-data.js";
+import type { APIRequestContext } from "@playwright/test";
+async function runId(request: APIRequestContext, url: string) {
+  const created = await request.post(`${url}/api/automations`, {
+    data: { name: "Artifacts", definition: SIMPLE_MANUAL_COMMAND },
+  });
+  expect(created.status()).toBe(201);
+  const automation = await created.json();
+  const accepted = await request.post(
+    `${url}/api/automations/${automation.id}/run`,
+    { data: {} },
+  );
+  expect(accepted.status()).toBe(202);
+  return (await waitForRun(request, url, (await accepted.json()).id)).id;
+}
 test.describe("Artifact Store", () => {
-  test("PUT /api/artifacts/:id uploads an artifact", async ({ request, testServer }) => {
-    const content = Buffer.from("test artifact content").toString("base64");
-    const resp = await request.put(`${testServer.url}/api/artifacts/test-file.txt?runId=run-1`, {
-      headers: {
-        Authorization: "Bearer test-token",
-        "Content-Type": "text/plain",
-      },
-      data: content,
-    });
-    expect(resp.status()).toBe(201);
-    const body = await resp.json();
-    expect(body).toHaveProperty("id");
-    expect(body).toHaveProperty("size");
-    expect(body.mime).toBe("text/plain");
-    expect(body.name).toBe("test-file.txt");
+  test("uploads and downloads bytes with content metadata", async ({
+    request,
+    testServer,
+  }) => {
+    const id = await runId(request, testServer.url),
+      content = "downloadable artifact data";
+    const response = await request.put(
+      `${testServer.url}/api/artifacts/test.txt?runId=${id}`,
+      { headers: { "Content-Type": "text/plain" }, data: content },
+    );
+    expect(response.status()).toBe(201);
+    const meta = await response.json();
+    expect(meta.id).toMatch(/^[a-f0-9]{64}$/);
+    expect(meta.size).toBe(Buffer.byteLength(content));
+    const downloaded = await request.get(
+      `${testServer.url}/api/artifacts/${meta.id}`,
+    );
+    expect(downloaded.status()).toBe(200);
+    expect(downloaded.headers()["content-type"]).toBe("text/plain");
+    expect(await downloaded.text()).toBe(content);
+    expect(downloaded.headers()["content-security-policy"]).toContain(
+      "sandbox",
+    );
   });
-
-  test("GET /api/artifacts/:id downloads the same artifact", async ({ request, testServer }) => {
-    const content = "downloadable artifact data";
-    const putResp = await request.put(`${testServer.url}/api/artifacts/download-test.txt?runId=run-2`, {
-      headers: {
-        Authorization: "Bearer test-token",
-        "Content-Type": "text/plain",
-      },
-      data: content,
-    });
-    const meta = await putResp.json();
-
-    const getResp = await request.get(`${testServer.url}/api/artifacts/${meta.id}`);
-    expect(getResp.ok()).toBeTruthy();
-    expect(getResp.headers()["content-type"]).toBe("text/plain");
-    const body = await getResp.text();
-    expect(body).toBe(content);
+  test("same content deduplicates across runs", async ({
+    request,
+    testServer,
+  }) => {
+    const first = await runId(request, testServer.url),
+      second = await runId(request, testServer.url);
+    const a = await request.put(
+      `${testServer.url}/api/artifacts/a.txt?runId=${first}`,
+      { data: "identical content" },
+    );
+    const b = await request.put(
+      `${testServer.url}/api/artifacts/b.txt?runId=${second}`,
+      { data: "identical content" },
+    );
+    expect(a.status()).toBe(201);
+    expect(b.status()).toBe(201);
+    const left = await a.json(),
+      right = await b.json();
+    expect(left.id).toBe(right.id);
+    expect(
+      (
+        await request.get(`${testServer.url}/api/artifacts/${left.id}`)
+      ).status(),
+    ).toBe(200);
   });
-
-  test("content-addressed: same content produces same ID", async ({ request, testServer }) => {
-    const content = "identical content for hashing test";
-    const encoded = Buffer.from(content).toString("base64");
-
-    const put1 = await request.put(`${testServer.url}/api/artifacts/dup-a.txt?runId=run-3`, {
-      headers: { Authorization: "Bearer t", "Content-Type": "text/plain" },
-      data: encoded,
-    });
-    const meta1 = await put1.json();
-
-    const put2 = await request.put(`${testServer.url}/api/artifacts/dup-b.txt?runId=run-4`, {
-      headers: { Authorization: "Bearer t", "Content-Type": "text/plain" },
-      data: encoded,
-    });
-    const meta2 = await put2.json();
-
-    expect(meta1.id).toBe(meta2.id);
+  test("invalid retention is rejected", async ({ request, testServer }) => {
+    const id = await runId(request, testServer.url);
+    for (const ttl of ["abc", "0", "-1", "9000"])
+      expect(
+        (
+          await request.put(
+            `${testServer.url}/api/artifacts/a?runId=${id}&ttlHours=${ttl}`,
+            { data: "content" },
+          )
+        ).status(),
+      ).toBe(400);
   });
-
-  test("invalid TTL still stores (uses default)", async ({ request, testServer }) => {
-    const content = Buffer.from("ttl test").toString("base64");
-    const resp = await request.put(`${testServer.url}/api/artifacts/ttl-test.txt?runId=run-5&ttlHours=abc`, {
-      headers: { Authorization: "Bearer t", "Content-Type": "text/plain" },
-      data: content,
-    });
-    expect(resp.status()).toBe(201);
-    const body = await resp.json();
-    expect(body).toHaveProperty("id");
+  test("upload must belong to an existing run", async ({
+    request,
+    testServer,
+  }) => {
+    expect(
+      (
+        await request.put(`${testServer.url}/api/artifacts/a?runId=missing`, {
+          data: "content",
+        })
+      ).status(),
+    ).toBe(400);
   });
-
-  test("upload without auth returns 401", async ({ request, testServer }) => {
-    const content = Buffer.from("no auth").toString("base64");
-    const resp = await request.put(`${testServer.url}/api/artifacts/no-auth.txt?runId=run-6`, {
-      headers: { "Content-Type": "text/plain" },
-      data: content,
-    });
-    expect(resp.status()).toBe(401);
-  });
-
-  test("GET non-existent artifact returns 404", async ({ request, testServer }) => {
-    const resp = await request.get(`${testServer.url}/api/artifacts/0000000000000000000000000000000000000000000000000000000000000000`);
-    expect(resp.status()).toBe(404);
+  test("missing and invalid artifact identifiers return 404", async ({
+    request,
+    testServer,
+  }) => {
+    for (const id of ["0".repeat(64), "invalid"])
+      expect(
+        (await request.get(`${testServer.url}/api/artifacts/${id}`)).status(),
+      ).toBe(404);
   });
 });

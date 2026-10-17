@@ -4,7 +4,7 @@ export interface CapabilityReport {
   display: "x11" | "wayland" | "none";
   tools: string[];
   screen: boolean;
-  input: "xdotool" | "ydotool" | "none";
+  input: "xdotool" | "ydotool" | "portal" | "none";
   gpu?: boolean;
 }
 
@@ -25,6 +25,10 @@ export interface NodeItem {
   binary?: Record<string, ArtifactRef>;
 }
 
+export interface NodeResult {
+  outputs: Record<string, NodeItem[]>;
+}
+
 export interface SimulationReport {
   description: string;
   wouldDo: string;
@@ -32,19 +36,31 @@ export interface SimulationReport {
 }
 
 export interface ArtifactStoreHandle {
-  store(data: ArrayBuffer | Uint8Array, mime: string, name: string, ttlHours?: number): Promise<ArtifactRef>;
+  read?(ref: ArtifactRef): Promise<Uint8Array>;
+  store(
+    data: ArrayBuffer | Uint8Array,
+    mime: string,
+    name: string,
+    ttlHours?: number,
+  ): Promise<ArtifactRef>;
 }
 
 export interface RunContext<P = unknown> {
   nodeId: string;
   nodeName: string;
+  automationId?: string;
+  executionId?: string;
+  signal?: AbortSignal;
+  stateSnapshot?: Record<string, unknown>;
+  actionTarget?: import("./types.js").ActionTarget;
+  inputs?: Record<string, NodeItem[]>;
   params: P;
   items: NodeItem[];
   env: Record<string, string>;
   secrets: Record<string, string>;
   state: {
     get(key: string): unknown;
-    set(key: string, value: void): void;
+    set(key: string, value: unknown): void;
   };
   now: Date;
   agentId: string;

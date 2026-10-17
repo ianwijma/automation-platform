@@ -22,16 +22,29 @@ import { Layers } from "lucide-react";
 
 const nodeTypes = { automationNode: AutomationNodeFlow };
 
-function GroupLegend({ lanes }: { lanes: { key: string; label: string; color: { bg: string; border: string } }[] }) {
+function GroupLegend({
+  lanes,
+}: {
+  lanes: {
+    key: string;
+    label: string;
+    color: { bg: string; border: string };
+  }[];
+}) {
   if (lanes.length === 0) return null;
   return (
     <div className="absolute top-2 right-2 z-10 flex flex-col gap-1 rounded-lg border border-gray-700 bg-gray-900/90 p-2">
-      <span className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">Target Groups</span>
+      <span className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+        Target Groups
+      </span>
       {lanes.map((lane) => {
         const c = lane.color;
         return (
           <div key={lane.key} className="flex items-center gap-1.5">
-            <div className="h-2.5 w-2.5 rounded-sm" style={{ background: c.border }} />
+            <div
+              className="h-2.5 w-2.5 rounded-sm"
+              style={{ background: c.border }}
+            />
             <span className="text-[11px] text-gray-300">{lane.label}</span>
           </div>
         );
@@ -100,6 +113,7 @@ function DeletableEdge(props: EdgeProps) {
 const edgeTypes = { deletable: DeletableEdge };
 
 function AutomationCanvasInner() {
+  const isPreviewMode = useAppStore((s) => s.isPreviewMode);
   const rfNodes = useAppStore((s) => s.rfNodes);
   const rfEdges = useAppStore((s) => s.rfEdges);
   const setRfNodes = useAppStore((s) => s.setRfNodes);
@@ -203,7 +217,10 @@ function AutomationCanvasInner() {
     [reactFlow, addNode],
   );
 
-  const DEFAULT_LANE_COLOR = { bg: "rgba(59,130,246,0.06)", border: "rgba(59,130,246,0.2)" };
+  const DEFAULT_LANE_COLOR = {
+    bg: "rgba(59,130,246,0.06)",
+    border: "rgba(59,130,246,0.2)",
+  };
   const TARGET_LANE_COLORS = [
     { bg: "rgba(59,130,246,0.06)", border: "rgba(59,130,246,0.2)" },
     { bg: "rgba(34,197,94,0.06)", border: "rgba(34,197,94,0.2)" },
@@ -218,14 +235,18 @@ function AutomationCanvasInner() {
     for (const n of rfNodes) {
       const data = n.data as unknown as AutomationNodeData;
       const target = data.target as { kind: string; value?: string };
-      const key = target.kind === "local" ? "local" : `${target.kind}:${target.value ?? target.kind}`;
-      const label = target.kind === "local"
-        ? "Local"
-        : target.kind === "machine"
-          ? (target.value ?? "machine")
-          : target.kind === "tag"
-            ? `Tag: ${target.value ?? "tag"}`
-            : "Any";
+      const key =
+        target.kind === "local"
+          ? "local"
+          : `${target.kind}:${target.value ?? target.kind}`;
+      const label =
+        target.kind === "local"
+          ? "Local"
+          : target.kind === "machine"
+            ? (target.value ?? "machine")
+            : target.kind === "tag"
+              ? `Tag: ${target.value ?? "tag"}`
+              : "Any";
       if (!groups.has(key)) groups.set(key, { nodes: [], label });
       groups.get(key)!.nodes.push(n);
     }
@@ -233,7 +254,8 @@ function AutomationCanvasInner() {
       key,
       label: group.label,
       nodes: group.nodes,
-      color: TARGET_LANE_COLORS[i % TARGET_LANE_COLORS.length] ?? DEFAULT_LANE_COLOR,
+      color:
+        TARGET_LANE_COLORS[i % TARGET_LANE_COLORS.length] ?? DEFAULT_LANE_COLOR,
     }));
   }, [rfNodes, groupByTarget]);
 
@@ -252,11 +274,15 @@ function AutomationCanvasInner() {
     return map;
   }, [groupByTarget, groupLanes]);
 
-  const displayedNodes: Node[] = (selectedNodeId
-    ? rfNodes.map((n) =>
-        n.id === selectedNodeId ? { ...n, selected: true } : { ...n, selected: false },
-      )
-    : rfNodes).map((n) => {
+  const displayedNodes: Node[] = (
+    selectedNodeId
+      ? rfNodes.map((n) =>
+          n.id === selectedNodeId
+            ? { ...n, selected: true }
+            : { ...n, selected: false },
+        )
+      : rfNodes
+  ).map((n) => {
     if (groupedPositions && groupedPositions.has(n.id)) {
       const pos = groupedPositions.get(n.id)!;
       return { ...n, position: pos };
@@ -285,6 +311,8 @@ function AutomationCanvasInner() {
         {groupByTarget && <GroupLegend lanes={groupLanes} />}
         <ReactFlow
           nodes={displayedNodes}
+          nodesDraggable={!isPreviewMode}
+          nodesConnectable={!isPreviewMode}
           edges={rfEdges as Edge[]}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
@@ -298,14 +326,23 @@ function AutomationCanvasInner() {
           onDrop={onDrop}
           fitView
           fitViewOptions={{ padding: 0.2 }}
-          defaultEdgeOptions={{ type: "deletable", animated: true, style: { strokeWidth: 2 } }}
+          defaultEdgeOptions={{
+            type: "deletable",
+            animated: true,
+            style: { strokeWidth: 2 },
+          }}
           connectionLineStyle={{ stroke: "#6366f1", strokeWidth: 2 }}
           proOptions={{ hideAttribution: true }}
           className="bg-gray-950"
-          deleteKeyCode="Backspace"
+          deleteKeyCode={isPreviewMode ? null : "Backspace"}
           elementsSelectable
         >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#374151" />
+          <Background
+            variant={BackgroundVariant.Dots}
+            gap={16}
+            size={1}
+            color="#374151"
+          />
           <Controls
             position="bottom-left"
             className="!bg-gray-900 !border-gray-700 !rounded-lg !shadow-lg"

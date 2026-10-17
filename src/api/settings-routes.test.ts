@@ -1,3 +1,4 @@
+import { getAiSettings, setAiSettings } from "../core/ai-settings.js";
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { handleGetSettings, handleUpdateSettings } from "./settings-routes.js";
@@ -34,7 +35,7 @@ describe("handleGetSettings", () => {
   });
 
   test("masks API key in response", () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-abcdef1234567890xyz");
+    setAiSettings(db, { apiKey: "sk-abcdef1234567890xyz" });
     const res = handleGetSettings(db);
     return res.json().then((body: any) => {
       expect(body.aiApiKey).toBe("sk-a****0xyz");
@@ -43,7 +44,10 @@ describe("handleGetSettings", () => {
   });
 
   test("returns model when set", () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_model", "anthropic/claude-3");
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+      "ai_model",
+      "anthropic/claude-3",
+    );
     const res = handleGetSettings(db);
     return res.json().then((body: any) => {
       expect(body.aiModel).toBe("anthropic/claude-3");
@@ -51,19 +55,22 @@ describe("handleGetSettings", () => {
   });
 
   test("returns endpoint when set", () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_endpoint", "https://custom.api/v1");
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run(
+      "ai_endpoint",
+      "https://custom.api/v1",
+    );
     const res = handleGetSettings(db);
     return res.json().then((body: any) => {
       expect(body.aiEndpoint).toBe("https://custom.api/v1");
     });
   });
 
-  test("hasApiKey is true when empty string stored (source checks !== null)", () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "");
+  test("hasApiKey is false for an empty key", () => {
+    setAiSettings(db, { apiKey: "" });
     const res = handleGetSettings(db);
     return res.json().then((body: any) => {
       expect(body.aiApiKey).toBeNull();
-      expect(body.hasApiKey).toBe(true);
+      expect(body.hasApiKey).toBe(false);
     });
   });
 });
@@ -84,9 +91,16 @@ describe("handleUpdateSettings", () => {
     const res = await handleUpdateSettings(db, req);
     expect(res.status).toBe(200);
 
-    const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get("ai_api_key");
+    const row = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM settings WHERE key = ?")
+      .get("ai_api_key");
     expect(row).not.toBeNull();
-    expect(row!.value).toBe("sk-new-key-1234567890ab");
+    expect(row!.value).toStartWith("enc:v1:");
+    expect(row!.value).not.toContain("sk-new-key");
+    expect(getAiSettings(db).apiKey).toBe("sk-new-key-1234567890ab");
   });
 
   test("writes model to DB", async () => {
@@ -98,7 +112,12 @@ describe("handleUpdateSettings", () => {
     const res = await handleUpdateSettings(db, req);
     expect(res.status).toBe(200);
 
-    const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get("ai_model");
+    const row = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM settings WHERE key = ?")
+      .get("ai_model");
     expect(row!.value).toBe("openai/gpt-4o");
   });
 
@@ -111,12 +130,17 @@ describe("handleUpdateSettings", () => {
     const res = await handleUpdateSettings(db, req);
     expect(res.status).toBe(200);
 
-    const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get("ai_endpoint");
+    const row = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM settings WHERE key = ?")
+      .get("ai_endpoint");
     expect(row!.value).toBe("https://my-llm.example.com/v1");
   });
 
   test("preserves current key when masked value sent", async () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-orig-key-1234567890cd");
+    setAiSettings(db, { apiKey: "sk-orig-key-1234567890cd" });
 
     const req = new Request("http://localhost/api/settings", {
       method: "PUT",
@@ -126,12 +150,17 @@ describe("handleUpdateSettings", () => {
     const res = await handleUpdateSettings(db, req);
     expect(res.status).toBe(200);
 
-    const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get("ai_api_key");
-    expect(row!.value).toBe("sk-orig-key-1234567890cd");
+    const row = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM settings WHERE key = ?")
+      .get("ai_api_key");
+    expect(getAiSettings(db).apiKey).toBe("sk-orig-key-1234567890cd");
   });
 
   test("clears API key when empty string sent", async () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("ai_api_key", "sk-old-key");
+    setAiSettings(db, { apiKey: "sk-old-key" });
 
     const req = new Request("http://localhost/api/settings", {
       method: "PUT",
@@ -141,7 +170,12 @@ describe("handleUpdateSettings", () => {
     const res = await handleUpdateSettings(db, req);
     expect(res.status).toBe(200);
 
-    const row = db.query<{ value: string }, [string]>("SELECT value FROM settings WHERE key = ?").get("ai_api_key");
+    const row = db
+      .query<
+        { value: string },
+        [string]
+      >("SELECT value FROM settings WHERE key = ?")
+      .get("ai_api_key");
     expect(row!.value).toBe("");
   });
 

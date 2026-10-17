@@ -1,9 +1,16 @@
 import { describe, test, expect } from "bun:test";
-import type { RunContext, NodeItem, SimulationReport } from "../core/node-contract.js";
+import type {
+  RunContext,
+  NodeItem,
+  SimulationReport,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import "../nodes/index.js";
 
-function makeCtx(params: Record<string, unknown>, items: NodeItem[] = []): RunContext {
+function makeCtx(
+  params: Record<string, unknown>,
+  items: NodeItem[] = [],
+): RunContext {
   return {
     nodeId: "test-node",
     nodeName: "Test",
@@ -44,7 +51,7 @@ describe("logic.set", () => {
       [{ json: { value: 5 } }],
     );
     const result = await def.run(ctx);
-    expect(result[0].json.doubled).toBe("10");
+    expect(result[0].json.doubled).toBe(10);
   });
 
   test("run() handles multiple assignments", async () => {
@@ -63,20 +70,16 @@ describe("logic.set", () => {
   });
 
   test("run() with no assignments passes items through", async () => {
-    const ctx = makeCtx(
-      { assignments: [] },
-      [{ json: { existing: true } }],
-    );
+    const ctx = makeCtx({ assignments: [] }, [{ json: { existing: true } }]);
     const result = await def.run(ctx);
     expect(result[0].json.existing).toBe(true);
   });
 
   test("simulate() returns SimulationReport", async () => {
-    const ctx = makeCtx(
-      { assignments: [{ field: "x", value: "1" }] },
-      [{ json: {} }],
-    );
-    const report = await def.simulate!(ctx) as SimulationReport;
+    const ctx = makeCtx({ assignments: [{ field: "x", value: "1" }] }, [
+      { json: {} },
+    ]);
+    const report = (await def.simulate!(ctx)) as SimulationReport;
     expect(report.description).toBe("Set Fields");
     expect(report.wouldDo).toContain("1 field(s)");
   });

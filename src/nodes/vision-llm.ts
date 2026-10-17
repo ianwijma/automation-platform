@@ -1,4 +1,10 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { imageBytes } from "../core/image-input.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 
 interface LlmVisionParams {
@@ -18,29 +24,25 @@ const definition: NodeDefinition<LlmVisionParams> = {
   outputs: [{ name: "out", type: "item" }],
   paramsSchema: {
     prompt: { type: "string", description: "Prompt for the LLM" },
-    model: { type: "string", default: "openai/gpt-4o", description: "OpenRouter model ID" },
+    model: {
+      type: "string",
+      default: "openai/gpt-4o",
+      description: "OpenRouter model ID",
+    },
     imagePath: { type: "string", description: "Path to image file" },
-    apiKey: { type: "string", description: "OpenRouter API key" },
   },
 
   async run(ctx: RunContext<LlmVisionParams>): Promise<NodeItem[]> {
     const { prompt, imagePath } = ctx.params;
     const model = ctx.params.model ?? "openai/gpt-4o";
-    const apiKey = ctx.params.apiKey;
-    const effectiveApiKey = apiKey ?? ctx.secrets.OPENROUTER_API_KEY ?? "";
-
-    if (!effectiveApiKey) {
-      throw new Error("No API key provided. Set apiKey param or OPENROUTER_API_KEY secret.");
-    }
-
-    const file = Bun.file(imagePath);
-    const exists = await file.exists();
-    if (!exists) {
-      throw new Error(`Image file not found: ${imagePath}`);
-    }
-
-    const buffer = await file.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
+    const effectiveApiKey =
+      ctx.secrets.apiKey ?? ctx.secrets.OPENROUTER_API_KEY;
+    if (!effectiveApiKey)
+      throw new Error(
+        "Configure the platform AI provider or bind an AI credential",
+      );
+    const image = await imageBytes(ctx, imagePath);
+    const base64 = Buffer.from(image.data).toString("base64");
 
     const body = {
       model,
@@ -52,7 +54,7 @@ const definition: NodeDefinition<LlmVisionParams> = {
             {
               type: "image_url",
               image_url: {
-                url: `data:image/png;base64,${base64}`,
+                url: `data:${image.mime};base64,${base64}`,
               },
             },
           ],
@@ -60,28 +62,42 @@ const definition: NodeDefinition<LlmVisionParams> = {
       ],
     };
 
-    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${effectiveApiKey}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `${ctx.secrets.endpoint ?? "https://openrouter.ai/api/v1"}/chat/completions`,
+      {
+        signal: ctx.signal,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${effectiveApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`OpenRouter API error (${response.status}): ${errorText}`);
+      throw new Error(
+        `OpenRouter API error (${response.status}): ${errorText}`,
+      );
     }
 
     const data = (await response.json()) as {
       choices: { message: { content: string } }[];
       model: string;
-      usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+      usage: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
     };
 
     const content = data.choices?.[0]?.message?.content ?? "";
-    const usage = data.usage ?? { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+    const usage = data.usage ?? {
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      total_tokens: 0,
+    };
 
     return [
       {

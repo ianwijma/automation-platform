@@ -1,4 +1,9 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import { createExpressionEvaluator } from "../core/expressions.js";
 import type { ExpressionContext } from "../core/expression-contract.js";
@@ -14,30 +19,34 @@ const definition: NodeDefinition<IfParams> = {
   category: "logic",
   sideEffecting: false,
   inputs: [{ name: "in", type: "item" }],
-  outputs: [{ name: "true", type: "item" }, { name: "false", type: "item" }],
+  outputs: [
+    { name: "true", type: "item" },
+    { name: "false", type: "item" },
+  ],
   paramsSchema: {
     condition: { type: "string", description: "Expression to evaluate" },
   },
 
   async run(ctx: RunContext<IfParams>): Promise<NodeItem[]> {
     const evaluator = createExpressionEvaluator();
-    const firstItem = ctx.items[0];
-    const exprCtx: ExpressionContext = {
-      json: firstItem?.json ?? {},
-      items: ctx.items,
-      node: { id: ctx.nodeId, name: ctx.nodeName },
-      env: ctx.env,
-      state: {},
-      now: ctx.now,
-    };
-
-    const result = evaluator.evaluate(ctx.params.condition, exprCtx);
-    const branch = result ? "true" : "false";
-
-    return ctx.items.map((item) => ({
-      json: { ...item.json, _branch: branch },
-      binary: item.binary,
-    }));
+    return ctx.items.map((item) => {
+      const exprCtx: ExpressionContext = {
+        json: item.json,
+        items: ctx.items,
+        node: { id: ctx.nodeId, name: ctx.nodeName },
+        env: ctx.env,
+        state: ctx.stateSnapshot ?? {},
+        now: ctx.now,
+      };
+      const result =
+        typeof ctx.params.condition === "string"
+          ? evaluator.evaluate(ctx.params.condition, exprCtx)
+          : ctx.params.condition;
+      return {
+        ...item,
+        json: { ...item.json, _branch: result ? "true" : "false" },
+      };
+    });
   },
 
   async simulate(ctx: RunContext<IfParams>): Promise<SimulationReport> {

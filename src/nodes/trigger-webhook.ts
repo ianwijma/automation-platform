@@ -1,4 +1,9 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 
 interface WebhookParams {
@@ -20,7 +25,8 @@ const definition: NodeDefinition<WebhookParams> = {
   },
 
   async run(ctx: RunContext<WebhookParams>): Promise<NodeItem[]> {
-    const webhookBody = ctx.items.length > 0 ? ctx.items[0].json : {};
+    const event = ctx.items[0]?.json ?? {};
+    const webhookBody = event.body ?? event;
     return [
       {
         json: {

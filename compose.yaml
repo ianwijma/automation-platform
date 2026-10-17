@@ -1,0 +1,28 @@
+services:
+  platform:
+    build: .
+    environment:
+      AP_ADMIN_TOKEN: ${AP_ADMIN_TOKEN:?Set a random administrator token of at least 32 characters}
+      AP_PUBLIC_URL: https://${AP_DOMAIN:-localhost}
+    volumes:
+      - platform-data:/data
+    restart: unless-stopped
+  proxy:
+    image: caddy:2.10.2
+    environment:
+      AP_DOMAIN: ${AP_DOMAIN:-localhost}
+    ports:
+      - '443:443'
+      - '80:80'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      platform:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  platform-data:
+  caddy-data:
+  caddy-config:

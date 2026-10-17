@@ -1,0 +1,14 @@
+[package]
+name = "ap-desktop-bridge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ashpd = { version = "=0.13.13", default-features = false, features = ["tokio", "remote_desktop", "screencast"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-std", "io-util", "time", "net", "process", "sync"] }
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+libc = "0.2"
+futures-util = "0.3"

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { AutomationDefinition } from "../core/types.js";
 import type { Database } from "bun:sqlite";
 import type { AgentDispatcher } from "../agent/dispatcher.js";
 import type { RunOptions } from "../core/execution-engine.js";
@@ -37,10 +39,13 @@ export async function handleWebhookRequest(
   if (mode === "test") {
     const entry = testWebhooks.get(`${automationId}:${path}`);
     if (!entry) {
-      return new Response(JSON.stringify({ error: "Webhook not registered for testing" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Webhook not registered for testing" }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
 
     if (Date.now() > entry.expiresAt) {
@@ -55,13 +60,39 @@ export async function handleWebhookRequest(
   if (mode === "prod") {
     const automation = getAutomation(db, automationId);
     if (!automation || !automation.activeVersionId) {
-      return new Response(JSON.stringify({ error: "Automation not found or not active" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "Automation not found or not active" }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
   }
 
+  const auto = getAutomation(db, automationId);
+  const version = auto?.activeVersionId
+    ? db
+        .query<
+          { definition_json: string },
+          [string]
+        >("SELECT definition_json FROM automation_versions WHERE id=?")
+        .get(auto.activeVersionId)
+    : null;
+  const definition: AutomationDefinition | null =
+    mode === "prod"
+      ? version
+        ? JSON.parse(version.definition_json)
+        : null
+      : (auto?.draft ?? null);
+  const trigger = definition?.nodes.find(
+    (n) =>
+      !n.disabled && n.type === "trigger.webhook" && n.params.path === path,
+  );
+  if (!trigger)
+    return Response.json({ error: "Webhook not found" }, { status: 404 });
+  if (String(trigger.params.method ?? "POST").toUpperCase() !== req.method)
+    return Response.json({ error: "Method not allowed" }, { status: 405 });
   let body: Record<string, unknown> = {};
   const contentType = req.headers.get("content-type") ?? "";
 
@@ -81,7 +112,11 @@ export async function handleWebhookRequest(
       json: {
         webhookPath: path,
         method: req.method,
-        headers: Object.fromEntries(req.headers.entries()),
+        headers: Object.fromEntries(
+          [...req.headers.entries()].filter(
+            ([key]) => !["authorization", "cookie"].includes(key),
+          ),
+        ),
         body,
         triggeredAt: new Date().toISOString(),
       },
@@ -89,11 +124,19 @@ export async function handleWebhookRequest(
   ];
 
   const options: RunOptions = {
-    mode: "trigger",
+    mode: mode === "prod" ? "trigger" : "manual",
+    triggerNodeId: trigger.id,
     triggerData,
   };
 
-  const run = await runAutomation(db, dispatcher, automationId, options);
+  const id = randomUUID();
+  const work = runAutomation(db, dispatcher, automationId, {
+    ...options,
+    runId: id,
+  });
+  const run = dispatcher.getRun(id);
+  if (!run) await work;
+  else void work.catch((error) => console.error("Webhook run failed", error));
   if (!run) {
     return new Response(JSON.stringify({ error: "Failed to create run" }), {
       status: 500,

@@ -1,215 +1,150 @@
 # Automation Platform
 
-A self-hosted, AI-enabled Linux automation platform with a visual editor, fleet execution, and a desktop shell.
+A self-hosted, AI-enabled Linux automation platform with a visual editor, fleet execution, and an optional desktop shell. It combines desktop workflows (capture, OCR, window targeting and input) with unattended command, data, schedule, webhook and polling workflows.
 
-## Features
+## Status
 
-- **Visual Editor** — React Flow canvas with 26+ node types across 6 categories (triggers, logic, system, state, vision, input)
-- **Unified Execution Model** — local and remote agents use the identical `AgentDispatch` interface; no special-casing
-- **Fleet Execution** — WSS-based agent protocol, capability-aware target resolution (local/machine/tag/any)
-- **Desktop Shell** — Tauri v2 sidecar that spawns the platform, system tray, autostart (Linux-first AppImage)
-- **AI Assistant** — OpenRouter-backed chat with structured diff generation and one-click apply
-- **Credential Vault** — AES-256-GCM envelope encryption, JIT secret delivery, optional passphrase wrapping
-- **3-Scope Env Vars** — machine > automation > global precedence with secret resolution
-- **Version History** — auto-version on every save, revert to any version, labeled releases
-- **Re-run from Node** — partial re-execution with pinned upstream data
-- **Payload Retention Toggle** — `savePayloads: false` nullifies I/O in execution records
+The repair implementation preserves Bun, TypeScript, React Flow, SQLite and Tauri. The engine now executes connected branches and loop batches, records durable run attempts, cancels actual work, and uses the same execution context for local and remote agents. The editor saves validated definitions and exposes credentials, scoped environment variables, execution settings, fleet enrollment and portable imports.
 
-## Quick Start
+Verified locally: TypeScript and UI builds; unit/integration and Chromium suites; real loopback fleet transport with reconnect, state and artifact transfer; an isolated X11 desktop workflow; a portable executable launched outside the checkout; a Tauri Debian package; and a container build. See [implementation and verification](docs/IMPLEMENTATION.md) for exact evidence, limitations and remaining release gates. This is a development build, not a claim of production readiness or tested support on every Linux desktop.
 
-### Prerequisites
+GNOME/KDE Wayland support has a compiled portal helper and compositor adapters. It still needs actual GNOME and KDE session acceptance testing. Plugins and agent self-update are deliberately disabled until isolated plugin execution and verified update delivery exist.
 
-- [Bun](https://bun.sh) >= 1.3
-- Linux (primary target; macOS works for development)
-- Node.js >= 18 (for UI build)
+## Run locally
 
-### System Dependencies
-
-Vision and input nodes depend on system tools. Install what you need:
+Use Bun **1.3.9** and Rust **1.95.0** for the tested build toolchain. Node.js 22+ is used for Playwright. The Rust toolchain is needed to build the desktop bridge; it is not needed to run the resulting executable.
 
 ```bash
-# Debian/Ubuntu
-sudo apt install xdotool maim tesseract-ocr imagemagick wmctrl x11-utils
-
-# Arch Linux
-sudo pacman -S xdotool maim tesseract imagemagick wmctrl xorg-xwininfo
-
-# Wayland (additionally)
-# For Hyprland: hyprctl is included
-# For Sway: swaymsg is included
-# Screenshot: pacman -S grim  (Arch) / apt install grim  (Debian sid+)
-# Region select: pacman -S slurp
-# Input: install ydotool — https://github.com/ReimuNotMoe/ydotool
-```
-
-Run `ap doctor` to check which tools are available and get targeted install hints.
-
-### Install & Run
-
-```bash
-# Clone
-git clone https://github.com/ianwijma/automation-platform.git
-cd automation-platform
-
-# Install dependencies
-bun install
-
-# Run in development mode
+bun install --frozen-lockfile
+bun run build:ui
 bun run dev
+```
 
-# Build the single binary (~102MB)
+Open the URL printed after `AP_READY`. The server binds `127.0.0.1` by default. Development mode builds the offline OCR worker; run `bun run build:ui` again after editing the frontend.
+
+To build the portable Linux executable:
+
+```bash
 bun run build
-
-# The binary prints AP_READY on stdout when the server is listening
-./ap serve --port 42000
+./dist/ap serve --no-browser
+./dist/ap doctor
 ```
 
-### Desktop App (Tauri)
+The executable embeds the UI, QuickJS sandbox, desktop bridge, OCR worker and English OCR data. Runtime helpers are extracted into the profile's `runtime/` directory. The desktop shell separately caches its unchanged executable under its application cache directory. System desktop utilities remain prerequisites; “portable” does not mean statically linked or independent of the host desktop session.
+
+For the first workflow, open **Settings → Import automation**, choose [examples/first-workflow.json](examples/first-workflow.json), import, select it, and click **Run**. It calculates a value and stores it in automation state. **Dry run** uses a temporary state overlay. Node previews show the inputs, outputs and executing agent.
+
+## Linux desktop dependencies
+
+For X11 on Debian/Ubuntu:
 
 ```bash
-cd desktop
-cargo tauri dev    # development
-cargo tauri build  # produces AppImage
+sudo apt install xdotool wmctrl maim imagemagick tesseract-ocr
 ```
 
-### Fleet Agent
+`maim` can fall back to `scrot` or ImageMagick's `import`. English OCR also works through the bundled offline WASM engine when system Tesseract is absent. Template matching requires ImageMagick's `compare` command.
+
+For GNOME/KDE Wayland, use the matching `xdg-desktop-portal` backend, PipeWire, GStreamer with its PipeWire plugin, and ImageMagick. The desktop must grant screen-sharing and remote-input consent. Window title/PID/app targeting additionally requires the matching adapter in [desktop/adapters](desktop/adapters/README.md). Other Wayland compositors are outside the current support target. Headless containers provide the control plane; run desktop agents inside the user's graphical session.
+
+Targets can select a screen, an unambiguous window, or a region. Title selectors are regular expressions. Input coordinates are relative to the selected window or region. Ambiguous or missing windows fail explicitly. See [desktop acceptance matrix](docs/DESKTOP-ACCEPTANCE.md).
+
+## Desktop application
+
+On Debian/Ubuntu, install the Tauri build dependencies first:
 
 ```bash
-# Generate a join token from the platform
-# Then on the remote machine:
-./ap join --url ws://your-server:42000/api/agent/connect --token <token>
-./ap agent
+sudo apt install build-essential libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+bun run --cwd desktop dev
+bun run --cwd desktop build --bundles deb,appimage
 ```
 
-## Architecture
+The workspace install includes the pinned Tauri CLI. Builds produce bundles under `desktop/src-tauri/target/release/bundle/`. The shell starts its bundled `ap` sidecar on a loopback port, loads the UI, and stops the service on quit. Tray and autostart integration still need interactive release acceptance on the supported desktops.
 
-```
-┌─────────────────────────────────────────────────┐
-│  Desktop Shell (Tauri v2)                       │
-│  ┌─────────────────────────────────────────────┐│
-│  │  React UI (React Flow + Tailwind CSS v4)    ││
-│  │  ┌─────────┐ ┌──────────┐ ┌──────────┐      ││
-│  │  │ Canvas  │ │ AI Panel │ │ History  │      ││
-│  │  └─────────┘ └──────────┘ └──────────┘      ││
-│  └─────────────────────────────────────────────┘│
-│  Bun.serve (HTTP + WSS)                         │
-│  ┌──────┐ ┌───────┐ ┌──────┐ ┌────────────┐     │
-│  │Engine│ │Vault  │ │Router│ │ Fleet Hub   │     │
-│  └──────┘ └───────┘ └──────┘ └────────────┘     │
-│  SQLite (WAL) · Artifact Store (content-addressed)│
-└─────────────────────────────────────────────────┘
-         ▲ WSS ▲          ▲ WSS ▲
-    ┌────┘      └────┐  ┌─┘     └──┐
-    │ Agent A       │  │ Agent B  │
-    │ (Linux host)  │  │ (Raspberry Pi)│
-    └───────────────┘  └─────────────┘
+## Fleet and unattended deployment
+
+For network access, set a random `AP_ADMIN_TOKEN` of at least 32 characters and an HTTPS `AP_PUBLIC_URL`. Terminate TLS at a reverse proxy; do not expose the platform's HTTP port directly. The UI asks for the administrator token and establishes an HttpOnly session. This is a single-administrator platform, without multi-user authorization.
+
+The provided Compose setup runs an unprivileged control plane behind Caddy:
+
+```bash
+export AP_ADMIN_TOKEN="$(openssl rand -hex 32)"
+export AP_DOMAIN=automation.example.com
+docker compose up --build -d
 ```
 
-### Key Principles
+Point the domain to the host and allow ports 80/443 for TLS provisioning. For a local trial, omit `AP_DOMAIN` and use `https://localhost`; Caddy uses its local CA, which must be trusted by the client. Keep the administrator token somewhere secure. Compose does not publish the internal HTTP port. Persistent volumes contain the database, encryption key and artifacts.
 
-1. **DX-first** — one binary, zero-config local, single-flag fleet join
-2. **Unified execution** — local/remote are identical agent records in graph semantics
-3. **n8n-style items** — `{json, binary}` with `$artifact` refs
-4. **Sandboxed expressions** — `{{ }}` JS expressions evaluated per-node
+Create a one-use token in **Settings → Fleet**, then on another machine:
 
-## Node Types
+```bash
+./dist/ap join https://automation.example.com --token JOIN_TOKEN
+./dist/ap agent
+```
 
-| Category | Nodes |
-|----------|-------|
-| **Triggers** | manual, schedule (cron), webhook, polling |
-| **Logic** | if, switch, merge, loop, delay, set, code |
-| **System** | command, launch, read file, write file, HTTP request |
-| **State** | get, set |
-| **Vision** | screenshot, OCR, image.detect, LLM vision, window list, window screenshot |
-| **Input** | mouse.click, mouse.move, keyboard.type, keyboard.key |
-| **Error** | throw |
+Enrollment exchanges the join token for a persistent identity stored in a mode-0600 `agent.json`. Reconnect preserves the agent ID and tags; revoke an agent from Settings to invalidate its identity. Run GUI agents in the desktop session, with its display and session D-Bus environment. Fleet dispatch is capability-aware and uses a bounded WebSocket protocol. A disconnect during an action is recorded as an uncertain, interrupted outcome; actions are not automatically replayed.
+
+## Execution behavior
+
+- **Drafts and activation:** manual runs use the saved draft; production triggers use the activated version. Save then activate again to publish changes. Invalid cron, timezone, polling or webhook configuration fails activation.
+- **Graph:** IF/Switch route only matching ports. Merge combines active inputs. Loop batches use `out → body → continue`, with a separate `done` path. Other cycles are rejected. Disabled nodes produce no output, so dependent paths stop.
+- **Expressions and code:** `{{ }}` preserves JSON types. Expressions and synchronous JS/TS code run in QuickJS with CPU/memory limits and no host filesystem, network, `process` or `require`. Use Command for authorized OS operations. Code receives `ctx.items`, `ctx.$json`, `ctx.$env` and `ctx.$state`.
+- **Dry runs:** pure logic executes normally; side-effecting nodes must provide a simulation. State changes remain in the dry-run overlay. Simulations are shown in the run panel.
+- **Timeouts and retries:** run and node timeouts propagate cancellation to commands, fetches and OCR workers. Commands run in cancellable process groups. Default retry is one attempt; enable retries deliberately for actions that can safely repeat.
+- **History and replay:** attempts and immutable definitions persist in SQLite. On restart, unfinished work becomes interrupted, without replay. Single-node and rerun requests return an accepted run immediately, so they remain cancellable. Rerun requires retained inputs and uses the original definition.
+- **Triggers:** cron runs in the platform, polling executes on the selected agent, and polling state persists. Overlapping fires of the same background trigger are suppressed. Missed cron events during downtime are not replayed. A polling `stopAfter` count persists across activation until its state is reset or the node is replaced.
+- **Webhooks:** configure one path segment and method. Production `/hooks/:automationId/:path` requires activation. The editor's Listen action opens `/hooks/test/:automationId/:path` for two minutes. Accepted requests return immediately. Configured webhook URLs are public entry points; apply sender authentication at the reverse proxy where needed.
+- **Failure automation:** full runs can invoke an active automation with one Manual Trigger, receiving `failedRunId`, `automationId`, and a redacted `error`. Cycles/deep chains are stopped. Dry runs, cancelled runs and uncertain disconnects do not invoke it.
+
+## Secrets, state and artifacts
+
+Credentials and secret environment variables are encrypted; credential APIs return metadata only. Environment precedence is machine → automation → global. The encryption key lives outside SQLite in `ap.db.key` (mode 0600); `AP_MASTER_KEY` optionally wraps it with a passphrase. Back up the database, key and artifacts together, and keep the same passphrase when restoring.
+
+Use a **fresh profile** when trying this repaired prototype:
+
+```bash
+AP_DATA_DIR="$HOME/.config/ap-repaired" ./dist/ap serve
+```
+
+Existing profiles are not deleted. Legacy plaintext instance keys are rejected with instructions instead of silently reusing them. Export definitions and rebind credentials if migrating prototype data. Do not assume every historical schema or secret format has a tested migration.
+
+Known secret values and sensitive fields are redacted from persisted execution records, while live node data remains usable. Redaction does not inspect image pixels, arbitrary artifact contents, encoded/transformed secrets, or literal secrets pasted into commands. Shell nodes execute with the agent user's OS permissions; this application is not a sandbox for untrusted workflows.
+
+Artifacts are SHA-256-addressed, expire after 72 hours by default, and are limited to 32 MiB each. Recorded node payloads above 1 MiB spill to an artifact. Fleet artifacts currently use bounded whole WebSocket messages, not streaming/chunked transfer. Expired payloads cannot be replayed. Redacted historical inputs cannot reproduce a removed secret; rerun upstream nodes to resolve it again. `savePayloads=false` suppresses recorded node I/O; required working artifacts still exist until expiry.
+
+## AI assistant
+
+Configure an OpenRouter or OpenAI-compatible endpoint, key and model in Settings. The assistant proposes structured node/edge/settings diffs; changes require explicit approval. The backend validates every operation and rejects stale proposals if the saved draft changed. Provider keys and secret environment values are not included in the graph context. Workflow content you put in prompts or node parameters is sent to the configured provider. Live paid-provider behavior remains an integration acceptance check; automated tests use controlled responses.
 
 ## Configuration
 
-Environment variables:
+| Variable | Meaning |
+|---|---|
+| `AP_DATA_DIR` | Profile directory; default `~/.config/ap` |
+| `AP_PORT` | HTTP port; default 7480; 0 selects a free port |
+| `AP_HOST` | Bind address; default `127.0.0.1` |
+| `AP_PUBLIC_URL` | Externally reachable HTTPS origin for reverse-proxied access |
+| `AP_ADMIN_TOKEN` | Administrator bearer token; required for network binding |
+| `AP_MASTER_KEY` | Optional passphrase for the external instance key |
+| `AP_NO_BROWSER` | Disable automatic browser launch |
+| `AP_OCR_LANG_PATH` | Directory of local `*.traineddata.gz` files for additional OCR languages |
+| `AP_DESKTOP_BRIDGE` | Override the bundled native helper path for development |
 
-| Variable | Description |
-|----------|-------------|
-| `AP_PORT` | HTTP server port (default: 42000) |
-| `AP_DATA_DIR` | Data directory (default: `~/.automation-platform`) |
-| `AP_MASTER_KEY` | Optional passphrase wrapping the instance encryption key |
-| `AP_LOG_LEVEL` | Log level: debug, info, warn, error (default: info) |
-
-## Testing
-
-```bash
-bun test src/           # Run unit tests (530+ tests)
-bunx playwright test    # Run E2E tests (118+ tests)
-bun run build:ui        # Build the UI
-ap doctor               # Check system capability status
-```
-
-## Project Structure
-
-```
-src/
-  core/       # Types, execution engine, expressions, node registry, crypto
-  agent/      # Local agent, fleet dispatcher, WSS client, capability probe
-  api/        # HTTP routes, WSS hub, artifacts, webhooks, AI service
-  nodes/      # All node type implementations
-  cli/        # CLI subcommands (serve, join, agent, doctor)
-  db/         # SQLite database with embedded migrations
-ui/            # React + React Flow + Tailwind CSS v4 editor
-desktop/       # Tauri v2 desktop shell
-test/          # Test files
-```
-
-## Plugins
-
-Custom node types can be loaded from a plugins directory. Each plugin has an `ap-plugin.json` manifest and an ES module entry point.
+## Verification and structure
 
 ```bash
-ap serve --plugins-dir /path/to/plugins
+bun run check                       # TypeScript, UI build, unit/integration tests
+bunx playwright install chromium
+bun run test:e2e                     # Browser + API tests
+bun run test:desktop                 # Owned Xvfb window; requires X11 dev tools
+bun run build
+bun run test:portable                # Executable from an empty temporary directory
+cargo test --locked --manifest-path desktop/bridge/Cargo.toml
+docker build -t automation-platform:implementation-test .
+bun run scripts/container-smoke.ts   # Disposable container; removes its own data
 ```
 
-Plugin structure:
+CI builds the portable executable and unsigned desktop packages, runs browser and disposable X11 checks, and verifies the container. Actual GNOME/KDE sessions and interactive shell behavior remain explicit release gates.
 
-```
-my-plugin/
-  ap-plugin.json    # manifest
-  index.js          # ES module exporting nodes
-```
+`src/core` owns validated contracts, sandbox and execution; `src/agent` owns transport and dispatch; `src/api` owns HTTP, triggers and artifact storage; `src/nodes` contains 26 built-ins; `ui` is the visual editor; `desktop/bridge` is the native portal helper; `desktop/src-tauri` is the shell. `ui/src/node-catalog.json` is generated by `scripts/catalog.ts` from the backend registry. Add built-in nodes there, then regenerate the catalog with `bun run build:ui`.
 
-Example `ap-plugin.json`:
-
-```json
-{
-  "name": "my-plugin",
-  "version": "1.0.0",
-  "main": "index.js",
-  "permissions": { "fs": false, "net": false, "env": false },
-  "nodes": [{
-    "type": "custom.greet",
-    "version": 1,
-    "displayName": "Greet",
-    "category": "execution",
-    "sideEffecting": false,
-    "inputs": [{ "name": "in", "type": "item" }],
-    "outputs": [{ "name": "out", "type": "item" }],
-    "paramsSchema": { "name": { "type": "string" } }
-  }]
-}
-```
-
-Example `index.js`:
-
-```js
-export const nodes = {
-  "custom.greet": async (ctx) => {
-    const name = ctx.params?.name || "World";
-    return [{ json: { greeting: `Hello, ${name}!` } }];
-  },
-  "custom.greet:simulate": async (ctx) => {
-    return { description: "Greet", wouldDo: `Would greet ${ctx.params?.name || "World"}` };
-  },
-};
-```
-
-## License
-
-MIT — see [LICENSE](./LICENSE)
+[PLAN.md](PLAN.md) preserves the design baseline and amendments. [TASKS.md](TASKS.md) tracks evidence and remaining work. Plugins, unsigned self-update, event triggers, RBAC, telemetry and plugin distribution are not enabled features of this build.

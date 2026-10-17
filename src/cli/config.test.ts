@@ -28,14 +28,14 @@ describe("AppConfig", () => {
     expect(config.host).toBe("127.0.0.1");
   });
 
-  test("host defaults to 0.0.0.0 for platform mode", () => {
+  test("host defaults to loopback for platform mode", () => {
     const config = resolveConfig(["serve"], "platform");
-    expect(config.host).toBe("0.0.0.0");
+    expect(config.host).toBe("127.0.0.1");
   });
 
-  test("host defaults to 0.0.0.0 for agent mode", () => {
+  test("host defaults to loopback for agent mode", () => {
     const config = resolveConfig([], "agent");
-    expect(config.host).toBe("0.0.0.0");
+    expect(config.host).toBe("127.0.0.1");
   });
 
   test("dataDir defaults to expanded home", () => {

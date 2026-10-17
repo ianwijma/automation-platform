@@ -1,9 +1,16 @@
 import { describe, test, expect } from "bun:test";
-import type { RunContext, NodeItem, SimulationReport } from "../core/node-contract.js";
+import type {
+  RunContext,
+  NodeItem,
+  SimulationReport,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import "../nodes/index.js";
 
-function makeCtx(params: Record<string, unknown>, items: NodeItem[] = []): RunContext {
+function makeCtx(
+  params: Record<string, unknown>,
+  items: NodeItem[] = [],
+): RunContext {
   return {
     nodeId: "test-node",
     nodeName: "Test",
@@ -34,18 +41,28 @@ describe("vision.llm", () => {
 
   test("run() throws when no API key is provided", async () => {
     const ctx = makeCtx(
-      { prompt: "Describe", model: "openai/gpt-4o", imagePath: "/tmp/test.png", apiKey: "" },
+      {
+        prompt: "Describe",
+        model: "openai/gpt-4o",
+        imagePath: "/tmp/test.png",
+        apiKey: "",
+      },
       [],
     );
-    expect(def.run(ctx)).rejects.toThrow("No API key provided");
+    expect(def.run(ctx)).rejects.toThrow("credential");
   });
 
   test("simulate() returns SimulationReport with model", async () => {
     const ctx = makeCtx(
-      { prompt: "Describe", model: "openai/gpt-4o", imagePath: "/tmp/test.png", apiKey: "key" },
+      {
+        prompt: "Describe",
+        model: "openai/gpt-4o",
+        imagePath: "/tmp/test.png",
+        apiKey: "key",
+      },
       [],
     );
-    const report = await def.simulate!(ctx) as SimulationReport;
+    const report = (await def.simulate!(ctx)) as SimulationReport;
     expect(report.description).toBe("LLM Vision");
     expect(report.wouldDo).toContain("openai/gpt-4o");
   });

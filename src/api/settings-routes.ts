@@ -1,12 +1,7 @@
 import type { Database } from "bun:sqlite";
 import { getAiSettings, setAiSettings } from "../core/ai-settings.js";
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Token",
-  "Access-Control-Max-Age": "86400",
-};
+const CORS_HEADERS: Record<string, string> = {};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -22,7 +17,9 @@ export function handleGetSettings(db: Database): Response {
   const settings = getAiSettings(db);
 
   const maskedKey = settings.apiKey
-    ? (settings.apiKey.length <= 8 ? "****" : settings.apiKey.slice(0, 4) + "****" + settings.apiKey.slice(-4))
+    ? settings.apiKey.length <= 8
+      ? "****"
+      : settings.apiKey.slice(0, 4) + "****" + settings.apiKey.slice(-4)
     : null;
 
   return json({
@@ -51,10 +48,7 @@ export async function handleUpdateSettings(
         updates.apiKey = "";
       } else {
         const current = getAiSettings(db);
-        if (
-          body.aiApiKey.includes("****") &&
-          current.apiKey
-        ) {
+        if (body.aiApiKey.includes("****") && current.apiKey) {
           updates.apiKey = current.apiKey;
         } else {
           updates.apiKey = body.aiApiKey;

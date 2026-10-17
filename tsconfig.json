@@ -17,6 +17,6 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "include": ["src/**/*.ts", "ui/src/**/*.ts", "ui/src/**/*.tsx", "test/**/*.ts", "e2e/**/*.ts", "playwright.config.ts"],
+  "include": ["src/**/*.ts", "ui/src/**/*.ts", "ui/src/**/*.tsx", "test/**/*.ts", "e2e/**/*.ts", "scripts/**/*.ts", "build.ts", "playwright.config.ts"],
   "exclude": ["node_modules", "dist", "ui/dist"]
 }

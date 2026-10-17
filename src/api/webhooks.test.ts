@@ -1,7 +1,11 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { AgentDispatcher } from "../agent/dispatcher.js";
-import { registerWebhook, handleWebhookRequest, clearTestWebhooks } from "./webhooks.js";
+import {
+  registerWebhook,
+  handleWebhookRequest,
+  clearTestWebhooks,
+} from "./webhooks.js";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -77,17 +81,38 @@ function insertActiveAutomation(db: Database, id: string) {
   const def = {
     schemaVersion: 1,
     name: "Test",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
-    nodes: [],
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
+    nodes: ["test-path", "prod-path"].map((path) => ({
+      id: path,
+      type: "trigger.webhook",
+      typeVersion: 1,
+      name: path,
+      target: { kind: "local" },
+      params: { path, method: "POST" },
+      disabled: false,
+      position: { x: 0, y: 0 },
+    })),
     edges: [],
   };
   const defJson = JSON.stringify(def);
   const versionId = "v-" + id;
   db.prepare(
-    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, "Test Auto", versionId, defJson, JSON.stringify(def.settings), now, now);
+    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    id,
+    "Test Auto",
+    versionId,
+    defJson,
+    JSON.stringify(def.settings),
+    now,
+    now,
+  );
   db.prepare(
-    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
   ).run(versionId, id, 1, defJson, now);
 }
 
@@ -99,13 +124,21 @@ describe("registerWebhook", () => {
   test("registers a test webhook entry", () => {
     registerWebhook("auto-1", "test-path");
     const db = createTestDb();
+    insertActiveAutomation(db, "auto-1");
     const dispatcher = new AgentDispatcher();
     const req = new Request("http://localhost/api/webhook/auto-1/test-path", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ test: true }),
     });
-    return handleWebhookRequest(db, dispatcher, "auto-1", "test-path", req, "test").then((res) => {
+    return handleWebhookRequest(
+      db,
+      dispatcher,
+      "auto-1",
+      "test-path",
+      req,
+      "test",
+    ).then((res) => {
       expect(res.status).not.toBe(404);
     });
   });
@@ -128,7 +161,14 @@ describe("handleWebhookRequest", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
     });
-    const res = await handleWebhookRequest(db, dispatcher, "auto-1", "unknown", req, "test");
+    const res = await handleWebhookRequest(
+      db,
+      dispatcher,
+      "auto-1",
+      "unknown",
+      req,
+      "test",
+    );
     expect(res.status).toBe(404);
   });
 
@@ -137,12 +177,22 @@ describe("handleWebhookRequest", () => {
     const origNow = Date.now;
     Date.now = () => origNow() + 3 * 60 * 1000;
     try {
-      const req = new Request("http://localhost/api/webhook/auto-1/expired-path", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const res = await handleWebhookRequest(db, dispatcher, "auto-1", "expired-path", req, "test");
+      const req = new Request(
+        "http://localhost/api/webhook/auto-1/expired-path",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({}),
+        },
+      );
+      const res = await handleWebhookRequest(
+        db,
+        dispatcher,
+        "auto-1",
+        "expired-path",
+        req,
+        "test",
+      );
       expect(res.status).toBe(410);
     } finally {
       Date.now = origNow;
@@ -156,7 +206,14 @@ describe("handleWebhookRequest", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ event: "push" }),
     });
-    const res = await handleWebhookRequest(db, dispatcher, "auto-1", "test-path", req, "test");
+    const res = await handleWebhookRequest(
+      db,
+      dispatcher,
+      "auto-1",
+      "test-path",
+      req,
+      "test",
+    );
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.runId).toBeDefined();
@@ -169,7 +226,14 @@ describe("handleWebhookRequest", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
     });
-    const res = await handleWebhookRequest(db, dispatcher, "no-auto", "x", req, "prod");
+    const res = await handleWebhookRequest(
+      db,
+      dispatcher,
+      "no-auto",
+      "x",
+      req,
+      "prod",
+    );
     expect(res.status).toBe(404);
   });
 
@@ -179,14 +243,21 @@ describe("handleWebhookRequest", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ event: "deploy" }),
     });
-    const res = await handleWebhookRequest(db, dispatcher, "auto-1", "prod-path", req, "prod");
+    const res = await handleWebhookRequest(
+      db,
+      dispatcher,
+      "auto-1",
+      "prod-path",
+      req,
+      "prod",
+    );
     expect(res.status).toBe(200);
   });
 
   test("prod mode: returns 404 for automation without active version", async () => {
     const now = new Date().toISOString();
     db.prepare(
-      "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+      "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
     ).run("inactive-auto", "Inactive", null, null, now, now);
 
     const req = new Request("http://localhost/api/webhook/inactive-auto/x", {
@@ -194,7 +265,14 @@ describe("handleWebhookRequest", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({}),
     });
-    const res = await handleWebhookRequest(db, dispatcher, "inactive-auto", "x", req, "prod");
+    const res = await handleWebhookRequest(
+      db,
+      dispatcher,
+      "inactive-auto",
+      "x",
+      req,
+      "prod",
+    );
     expect(res.status).toBe(404);
   });
 });

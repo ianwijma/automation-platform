@@ -1,5 +1,12 @@
+import { instanceKey } from "./secret-store.js";
 import type { AppDatabase } from "../db/database.js";
-import { generateInstanceKey, encryptForStorage, decryptFromStorage, encryptData, decryptData } from "./crypto.js";
+import {
+  generateInstanceKey,
+  encryptForStorage,
+  decryptFromStorage,
+  encryptData,
+  decryptData,
+} from "./crypto.js";
 import { randomUUID } from "node:crypto";
 
 interface CredentialRow {
@@ -24,44 +31,7 @@ export class CredentialVault {
   }
 
   private loadInstanceKey(): Buffer {
-    if (this.instanceKey) return this.instanceKey;
-
-    const row = this.db.db
-      .query<SettingRow, [string]>("SELECT value FROM settings WHERE key = ?")
-      .get("instance_key");
-
-    if (row) {
-      const masterKeyEnv = process.env.AP_MASTER_KEY;
-      if (masterKeyEnv) {
-        const masterKey = Buffer.from(masterKeyEnv, "hex");
-        try {
-          const wrapped = JSON.parse(row.value) as { encrypted: string; iv: string; tag: string };
-          const decryptedHex = decryptData(wrapped.encrypted, wrapped.iv, wrapped.tag, masterKey);
-          this.instanceKey = Buffer.from(decryptedHex, "hex");
-        } catch {
-          this.instanceKey = Buffer.from(row.value, "hex");
-        }
-      } else {
-        this.instanceKey = Buffer.from(row.value, "hex");
-      }
-    } else {
-      const newKey = generateInstanceKey();
-      const masterKeyEnv = process.env.AP_MASTER_KEY;
-      let storedValue: string;
-      if (masterKeyEnv) {
-        const masterKey = Buffer.from(masterKeyEnv, "hex");
-        const { encrypted, iv, tag } = encryptData(newKey.toString("hex"), masterKey);
-        storedValue = JSON.stringify({ encrypted, iv, tag });
-      } else {
-        storedValue = newKey.toString("hex");
-      }
-      this.db.db
-        .prepare("INSERT INTO settings (key, value) VALUES (?, ?)")
-        .run("instance_key", storedValue);
-      this.instanceKey = newKey;
-    }
-
-    return this.instanceKey;
+    return instanceKey(this.db.db);
   }
 
   storeCredential(
@@ -69,12 +39,17 @@ export class CredentialVault {
     type: string,
     values: Record<string, string>,
   ): string {
+    if (!name?.trim() || !type?.trim())
+      throw new Error("Credential name and type required");
+    validateValues(values);
     const key = this.loadInstanceKey();
     const id = randomUUID();
     const encBlob = encryptForStorage(JSON.stringify(values), key);
 
     this.db.db
-      .prepare("INSERT INTO credentials (id, name, type, enc_blob) VALUES (?, ?, ?, ?)")
+      .prepare(
+        "INSERT INTO credentials (id, name, type, enc_blob) VALUES (?, ?, ?, ?)",
+      )
       .run(id, name, type, encBlob);
 
     return id;
@@ -91,7 +66,10 @@ export class CredentialVault {
       .get(id);
     if (!row) throw new Error(`Credential not found: ${id}`);
 
-    const values = JSON.parse(decryptFromStorage(row.enc_blob, key)) as Record<string, string>;
+    const values = JSON.parse(decryptFromStorage(row.enc_blob, key)) as Record<
+      string,
+      string
+    >;
     return { name: row.name, type: row.type, values };
   }
 
@@ -103,17 +81,42 @@ export class CredentialVault {
   } | null {
     const key = this.loadInstanceKey();
     const row = this.db.db
-      .query<CredentialRow, [string]>("SELECT * FROM credentials WHERE name = ?")
+      .query<
+        CredentialRow,
+        [string]
+      >("SELECT * FROM credentials WHERE name = ?")
       .get(name);
     if (!row) return null;
 
-    const values = JSON.parse(decryptFromStorage(row.enc_blob, key)) as Record<string, string>;
+    const values = JSON.parse(decryptFromStorage(row.enc_blob, key)) as Record<
+      string,
+      string
+    >;
     return { id: row.id, name: row.name, type: row.type, values };
   }
 
-  listCredentials(): Array<{ id: string; name: string; type: string; createdAt: string }> {
+  getMetadata(id: string): {
+    id: string;
+    name: string;
+    type: string;
+    createdAt: string;
+  } {
+    const entry = this.listCredentials().find((c) => c.id === id);
+    if (!entry) throw new Error("Credential not found");
+    return entry;
+  }
+
+  listCredentials(): Array<{
+    id: string;
+    name: string;
+    type: string;
+    createdAt: string;
+  }> {
     const rows = this.db.db
-      .query<CredentialRow, []>("SELECT id, name, type, created_at FROM credentials ORDER BY created_at DESC")
+      .query<
+        CredentialRow,
+        []
+      >("SELECT id, name, type, created_at FROM credentials ORDER BY created_at DESC")
       .all();
     return rows.map((r) => ({
       id: r.id,
@@ -133,14 +136,21 @@ export class CredentialVault {
     return true;
   }
 
-  updateCredential(
-    id: string,
-    values: Record<string, string>,
-  ): void {
+  updateCredential(id: string, values: Record<string, string>): void {
     const key = this.loadInstanceKey();
     const encBlob = encryptForStorage(JSON.stringify(values), key);
     this.db.db
       .prepare("UPDATE credentials SET enc_blob = ? WHERE id = ?")
       .run(encBlob, id);
   }
+}
+
+function validateValues(values: Record<string, string>): void {
+  if (
+    !values ||
+    typeof values !== "object" ||
+    Array.isArray(values) ||
+    Object.values(values).some((value) => typeof value !== "string")
+  )
+    throw new Error("Credential fields must be strings");
 }

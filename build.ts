@@ -1,31 +1,56 @@
-import { readdirSync, cpSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join, relative } from "node:path";
-import { spawnSync } from "node:child_process";
-
-const ROOT = resolve(import.meta.dir);
-const OUT_DIR = resolve(ROOT, "dist");
-const UI_DIST = resolve(ROOT, "ui/dist");
-const BINARY_OUT = resolve(ROOT, "ap");
-
-rmSync(OUT_DIR, { recursive: true, force: true });
-mkdirSync(OUT_DIR, { recursive: true });
-
-if (existsSync(UI_DIST)) {
-  cpSync(UI_DIST, join(OUT_DIR, "ui"), { recursive: true });
-} else {
-  console.warn("Warning: ui/dist/ not found. Run `cd ui && npm run build` first.");
+const root = import.meta.dir;
+async function run(args: string[], cwd = root) {
+  const proc = Bun.spawn(args, { cwd, stdout: "inherit", stderr: "inherit" });
+  if (await proc.exited) throw new Error(`Build failed: ${args.join(" ")}`);
 }
-
-console.log("Compiling single binary...");
-const result = spawnSync(
-  "bun",
-  ["build", "--compile", "./src/main.ts", "--outfile", BINARY_OUT],
-  { cwd: ROOT, stdio: "inherit" },
-);
-
-if (result.status === 0) {
-  console.log(`Binary: ${BINARY_OUT}`);
-} else {
-  console.warn("Single-binary compilation failed. Check bun version >= 1.0.");
-  process.exit(1);
+await run(["bun", "run", "build:ui"]);
+await run(["bun", "run", "scripts/ocr.ts"]);
+await run([
+  "cargo",
+  "build",
+  "--release",
+  "--locked",
+  "--manifest-path",
+  "desktop/bridge/Cargo.toml",
+]);
+const assets: Record<string, string> = {};
+const ui = resolve(root, "ui/dist");
+function collect(path: string) {
+  for (const name of readdirSync(path)) {
+    const file = join(path, name);
+    if (statSync(file).isDirectory()) collect(file);
+    else
+      assets[`ui/${relative(ui, file)}`] =
+        readFileSync(file).toString("base64");
+  }
 }
+collect(ui);
+assets["runtime/ap-desktop-bridge"] = readFileSync(
+  join(root, "desktop/bridge/target/release/ap-desktop-bridge"),
+).toString("base64");
+mkdirSync(join(root, "dist"), { recursive: true });
+assets["runtime/ocr-worker.cjs"] = readFileSync(
+  join(root, "dist/ocr-worker.cjs"),
+).toString("base64");
+assets["runtime/eng.traineddata.gz"] = readFileSync(
+  join(root, "node_modules/@tesseract.js-data/eng/4.0.0/eng.traineddata.gz"),
+).toString("base64");
+const output = join(root, "dist/ap");
+const result = await Bun.build({
+  entrypoints: [join(root, "src/main.ts")],
+  target: "bun",
+  compile: { outfile: output },
+  define: { AP_EMBEDDED_ASSETS: JSON.stringify(assets) },
+});
+if (!result.success)
+  throw new AggregateError(result.logs, "Executable compilation failed");
+if (process.argv.includes("--desktop")) {
+  // linuxdeploy's ELF rewriting corrupts Bun's embedded executable payload.
+  // Package compressed bytes as a resource and extract them unchanged at launch.
+  const resources = join(root, "desktop/src-tauri/resources");
+  mkdirSync(resources, { recursive: true });
+  await Bun.write(join(resources, "ap.gz"), Bun.gzipSync(readFileSync(output)));
+}
+console.log(`Portable executable: ${output}`);

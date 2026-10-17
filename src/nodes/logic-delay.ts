@@ -1,12 +1,14 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { delay } from "../core/cancellation.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 
 interface DelayParams {
   seconds: number;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const definition: NodeDefinition<DelayParams> = {
@@ -23,7 +25,7 @@ const definition: NodeDefinition<DelayParams> = {
 
   async run(ctx: RunContext<DelayParams>): Promise<NodeItem[]> {
     const seconds = ctx.params.seconds ?? 1;
-    await sleep(seconds * 1000);
+    await delay(seconds * 1000, ctx.signal);
     return ctx.items;
   },
 

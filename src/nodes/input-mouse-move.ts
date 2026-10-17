@@ -1,18 +1,15 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { desktopInput } from "../core/desktop-driver.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
-import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface MouseMoveParams {
   x: number;
   y: number;
-}
-
-function detectInputMethod(): "xdotool" | "ydotool" | "none" {
-  const sessionType = process.env.XDG_SESSION_TYPE;
-  if ((sessionType === "x11" || process.env.DISPLAY) && !process.env.WAYLAND_DISPLAY) {
-    return "xdotool";
-  }
-  return "ydotool";
 }
 
 const definition: NodeDefinition<MouseMoveParams> = {
@@ -31,28 +28,12 @@ const definition: NodeDefinition<MouseMoveParams> = {
   },
 
   async run(ctx: RunContext<MouseMoveParams>): Promise<NodeItem[]> {
-    const { x, y } = ctx.params;
-    const inputMethod = detectInputMethod();
-
-    if (inputMethod === "xdotool") {
-      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["xdotool", "mousemove", String(x), String(y)] });
-      if (exitCode !== 0) {
-        throw new Error(`xdotool mousemove failed: ${stderr}`);
-      }
-    } else if (inputMethod === "ydotool") {
-      const { exitCode, stderr } = await spawnAndCapture({ cmd: ["ydotool", "mousemove", "--absolute", String(x), String(y)] });
-      if (exitCode !== 0) {
-        throw new Error(`ydotool mousemove failed: ${stderr}`);
-      }
-    } else {
-      throw new Error("No input method available. Install xdotool (X11) or ydotool (Wayland).");
-    }
-
-    return [
-      {
-        json: { x, y },
-      },
-    ];
+    await desktopInput(
+      "move",
+      ctx.params as unknown as Record<string, unknown>,
+      ctx.actionTarget,
+    );
+    return [{ json: { ...ctx.params, success: true } }];
   },
 
   async simulate(ctx: RunContext<MouseMoveParams>): Promise<SimulationReport> {

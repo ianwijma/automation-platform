@@ -2,20 +2,38 @@
   "name": "automation-platform",
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["ui"],
+  "workspaces": [
+    "ui",
+    "desktop"
+  ],
   "scripts": {
-    "dev": "bun run src/main.ts",
+    "dev": "bun run scripts/ocr.ts && bun run src/main.ts",
     "build": "bun run build.ts",
-    "build:ui": "bun run --filter automation-platform-ui build",
+    "build:ui": "bun run scripts/catalog.ts && bun run --filter automation-platform-ui build",
     "test": "bun test src/",
     "test:e2e": "bunx playwright test",
-    "lint": "bun run lint.ts",
-    "typecheck": "bunx tsc --noEmit"
+    "lint": "bun run typecheck",
+    "typecheck": "bunx tsc --noEmit",
+    "check": "bun run typecheck && bun run build:ui && bun test src/",
+    "test:desktop": "bun run scripts/ocr.ts && bun run scripts/desktop-smoke.ts",
+    "test:portable": "bun run scripts/portable-smoke.ts dist/ap scripts/fixtures/ocr.png",
+    "format": "prettier --write src ui/src e2e scripts build.ts",
+    "test:container": "bun run scripts/container-smoke.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@jitl/quickjs-singlefile-cjs-release-sync": "0.32.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "croner": "10.0.1",
+    "quickjs-emscripten": "0.32.0",
+    "tesseract.js": "7.0.0",
+    "tesseract.js-core": "7.0.0",
+    "zod": "4.6.7"
+  },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "@types/bun": "latest",
+    "prettier": "3.6.2",
     "typescript": "^5.7.0"
-  }
+  },
+  "packageManager": "bun@1.3.9"
 }

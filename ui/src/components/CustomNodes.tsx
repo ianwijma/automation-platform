@@ -1,9 +1,23 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { AutomationNodeData, ActionTarget } from "../types";
-import { CATEGORY_COLORS, CATEGORY_BORDER, ACTION_TARGET_LABELS } from "../types";
+import {
+  CATEGORY_COLORS,
+  CATEGORY_BORDER,
+  ACTION_TARGET_LABELS,
+} from "../types";
 import { getPalettePorts } from "./NodePalette";
-import { Monitor, Server, Tag, Zap, Ban, ScreenShare, AppWindow, Square, File } from "lucide-react";
+import {
+  Monitor,
+  Server,
+  Tag,
+  Zap,
+  Ban,
+  ScreenShare,
+  AppWindow,
+  Square,
+  File,
+} from "lucide-react";
 import { useAppStore } from "../store";
 
 const TARGET_ICONS: Record<string, typeof Monitor> = {
@@ -21,7 +35,15 @@ const ACTION_ICONS: Record<string, typeof ScreenShare> = {
   none: Ban,
 };
 
-function RunsOnBadge({ kind, value, offline }: { kind: string; value?: string; offline?: boolean }) {
+function RunsOnBadge({
+  kind,
+  value,
+  offline,
+}: {
+  kind: string;
+  value?: string;
+  offline?: boolean;
+}) {
   const Icon = TARGET_ICONS[kind] ?? Monitor;
   const label =
     kind === "local"
@@ -53,13 +75,20 @@ function ActsOnBadge({ actionTarget }: { actionTarget?: ActionTarget }) {
   if (!actionTarget || actionTarget.kind === "none") return null;
 
   const Icon = ACTION_ICONS[actionTarget.kind] ?? Square;
-  const kindLabel = ACTION_TARGET_LABELS[actionTarget.kind] ?? actionTarget.kind;
+  const kindLabel =
+    ACTION_TARGET_LABELS[actionTarget.kind] ?? actionTarget.kind;
 
   let detail = "";
   if (actionTarget.kind === "screen") {
-    detail = actionTarget.display ?? (actionTarget.monitor != null ? `#${actionTarget.monitor}` : "");
+    detail =
+      actionTarget.display ??
+      (actionTarget.monitor != null ? `#${actionTarget.monitor}` : "");
   } else if (actionTarget.kind === "window") {
-    detail = actionTarget.appId ?? actionTarget.windowTitle ?? actionTarget.windowId ?? (actionTarget.pid ? `pid:${actionTarget.pid}` : "");
+    detail =
+      actionTarget.appId ??
+      actionTarget.windowTitle ??
+      actionTarget.windowId ??
+      (actionTarget.pid ? `pid:${actionTarget.pid}` : "");
   } else if (actionTarget.kind === "region") {
     const r = actionTarget.region;
     detail = r ? `${r.width}×${r.height}` : "";
@@ -84,14 +113,15 @@ function AutomationNodeComponent(props: NodeProps) {
   const color = CATEGORY_COLORS[category] ?? "#6b7280";
   const borderClass = CATEGORY_BORDER[category] ?? "border-gray-500/60";
 
-  const dryRun = useAppStore((s) => s.dryRun);
   const nodeExecutions = useAppStore((s) => s.nodeExecutions);
   const currentRunId = useAppStore((s) => s.currentRunId);
   const agents = useAppStore((s) => s.agents);
 
-  const nodeExecs = nodeExecutions[props.id] ?? [];
-  const latestExec = nodeExecs[0];
-  const isSimulated = dryRun || (currentRunId && latestExec?.simulated === true);
+  const nodeExecs = (
+    currentRunId ? (nodeExecutions[currentRunId] ?? []) : []
+  ).filter((e) => e.nodeId === props.id);
+  const latestExec = nodeExecs[nodeExecs.length - 1];
+  const isSimulated = latestExec?.simulated === true;
 
   const target = data.target as { kind: string; value?: string };
   const actionTarget = data.actionTarget as ActionTarget | undefined;
@@ -100,27 +130,34 @@ function AutomationNodeComponent(props: NodeProps) {
     target.kind !== "local" &&
     (() => {
       if (target.kind === "machine") {
-        const agent = agents.find((a) => a.id === target.value || a.name === target.value);
+        const agent = agents.find(
+          (a) => a.id === target.value || a.name === target.value,
+        );
         return !agent || agent.status === "offline";
       }
       if (target.kind === "tag") {
-        const matching = agents.filter((a) => a.tags.includes(target.value ?? ""));
-        return matching.length === 0 || matching.every((a) => a.status === "offline");
+        const matching = agents.filter((a) =>
+          a.tags.includes(target.value ?? ""),
+        );
+        return (
+          matching.length === 0 || matching.every((a) => a.status === "offline")
+        );
       }
       if (target.kind === "any") {
-        const online = agents.filter((a) => a.status === "online" && !a.isLocal);
+        const online = agents.filter((a) => a.status === "online");
         return online.length === 0;
       }
       return false;
     })();
 
-  const ports = getPalettePorts(data.nodeType);
+  const ports = getPalettePorts(data.nodeType, data.params);
   const handles = [];
 
   for (const input of ports.inputs) {
     const totalInputs = ports.inputs.length;
     const idx = ports.inputs.indexOf(input);
-    const topPercent = totalInputs === 1 ? 50 : (30 + (40 * idx) / (totalInputs - 1));
+    const topPercent =
+      totalInputs === 1 ? 50 : 30 + (40 * idx) / (totalInputs - 1);
     handles.push(
       <Handle
         key={input.name}
@@ -136,7 +173,8 @@ function AutomationNodeComponent(props: NodeProps) {
   for (const output of ports.outputs) {
     const totalOutputs = ports.outputs.length;
     const idx = ports.outputs.indexOf(output);
-    const topPercent = totalOutputs === 1 ? 50 : (30 + (40 * idx) / (totalOutputs - 1));
+    const topPercent =
+      totalOutputs === 1 ? 50 : 30 + (40 * idx) / (totalOutputs - 1);
     const isTrue = output.name === "true";
     const isFalse = output.name === "false";
     const bgClass = isTrue
@@ -155,7 +193,9 @@ function AutomationNodeComponent(props: NodeProps) {
         className={`!h-3 !w-3 !border-2 !border-gray-700 ${bgClass}`}
       >
         {label && (
-          <span className={`absolute -right-4 -top-1 text-[9px] ${isTrue ? "text-green-400" : "text-red-400"}`}>
+          <span
+            className={`absolute -right-4 -top-1 text-[9px] ${isTrue ? "text-green-400" : "text-red-400"}`}
+          >
             {label}
           </span>
         )}
@@ -169,13 +209,14 @@ function AutomationNodeComponent(props: NodeProps) {
         selected ? "ring-2 ring-white/30 shadow-white/10" : ""
       }`}
     >
-      <div
-        className="h-1.5 rounded-t-lg"
-        style={{ backgroundColor: color }}
-      />
+      <div className="h-1.5 rounded-t-lg" style={{ backgroundColor: color }} />
       <div className="px-3 py-2">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <RunsOnBadge kind={target.kind} value={target.value} offline={isTargetOffline} />
+          <RunsOnBadge
+            kind={target.kind}
+            value={target.value}
+            offline={isTargetOffline}
+          />
           <ActsOnBadge actionTarget={actionTarget} />
         </div>
         <div className="mt-1 text-[10px] font-medium uppercase tracking-wider text-gray-600">
@@ -184,9 +225,10 @@ function AutomationNodeComponent(props: NodeProps) {
         <div className="mt-0.5 text-sm font-medium text-gray-100 leading-tight">
           {data.name}
         </div>
-        <div className="mt-0.5 text-[11px] text-gray-500">
-          {data.nodeType}
-        </div>
+        {latestExec && (
+          <div className="text-[10px] text-gray-400">{latestExec.status}</div>
+        )}
+        <div className="mt-0.5 text-[11px] text-gray-500">{data.nodeType}</div>
       </div>
 
       {data.disabled && (

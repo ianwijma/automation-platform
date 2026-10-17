@@ -4,16 +4,11 @@
   "version": "0.1.0",
   "identifier": "com.automation-platform.desktop",
   "build": {
-    "frontendDist": "../",
-    "devUrl": "http://localhost:1420",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "frontendDist": "../shell",
+    "beforeBuildCommand": "bun run ../build.ts --desktop",
+    "beforeDevCommand": "bun run ../build.ts --desktop"
   },
   "app": {
-    "trayIcon": {
-      "id": "main-tray",
-      "iconPath": "icons/icon.png"
-    },
     "windows": [
       {
         "title": "Automation Platform",
@@ -29,28 +24,17 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "appimage",
+      "deb"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
+      "icons/128x128@2x.png"
     ],
-    "linux": {
-      "targets": ["appimage", "deb"]
-    },
-    "externalBin": ["ap"]
-  },
-  "plugins": {
-    "shell": {
-      "scope": [
-        {
-          "name": "ap",
-          "sidecar": true,
-          "args": true
-        }
-      ]
-    }
+    "resources": [
+      "resources/ap.gz"
+    ]
   }
 }
