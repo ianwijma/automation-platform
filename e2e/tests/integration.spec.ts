@@ -1,4 +1,5 @@
 import { test, expect, waitForRun } from "../fixtures/base.js";
+import { desktopTest } from "../fixtures/x11.js";
 
 const COMMAND_DEFINITION = {
   schemaVersion: 1,
@@ -406,10 +407,11 @@ test.describe("Integration: Launch Node", () => {
   });
 });
 
-test.describe("Integration: Window List", () => {
-  test("window list node returns windows on X11", async ({
+desktopTest.describe("Integration: Window List", () => {
+  desktopTest("window list node returns windows on X11", async ({
     request,
     testServer,
+    desktop,
   }) => {
     const windowListDef = {
       schemaVersion: 1,
@@ -436,7 +438,11 @@ test.describe("Integration: Window List", () => {
           typeVersion: 1,
           name: "List Windows",
           target: { kind: "local" },
-          params: { filter: "", pid: 0, includeGeometry: true },
+          params: {
+            filter: "^AP Fixture$",
+            pid: desktop.pid,
+            includeGeometry: true,
+          },
           disabled: false,
           position: { x: 200, y: 0 },
         },
@@ -455,6 +461,7 @@ test.describe("Integration: Window List", () => {
     const createResp = await request.post(`${testServer.url}/api/automations`, {
       data: { name: "Integration WindowList", definition: windowListDef },
     });
+    expect(createResp.ok()).toBeTruthy();
     const automation = await createResp.json();
 
     const runResp = await request.post(
@@ -476,8 +483,19 @@ test.describe("Integration: Window List", () => {
       (ne: any) => ne.nodeId === "n2",
     );
     expect(listExec).toBeDefined();
-    expect(listExec.output.length).toBeGreaterThan(0);
-    expect(listExec.output[0].json.windowId).toBeDefined();
-    expect(listExec.output[0].json.title).toBeDefined();
+    expect(run.status, JSON.stringify(detail.nodeExecutions)).toBe("success");
+    expect(listExec.status).toBe("success");
+    expect(listExec.output).toHaveLength(1);
+    expect(Number(listExec.output[0].json.windowId)).toBe(
+      Number(desktop.windowId),
+    );
+    expect(listExec.output[0].json).toMatchObject({
+      title: "AP Fixture",
+      pid: desktop.pid,
+      x: 50,
+      y: 50,
+      width: 640,
+      height: 180,
+    });
   });
 });

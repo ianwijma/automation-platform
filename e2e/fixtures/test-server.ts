@@ -41,7 +41,7 @@ process.stdout.write("AP_E2E_READY " + port + "\\n");
 `;
 
 export async function startTestServer(
-  options: { adminToken?: string; aiReply?: string } = {},
+  options: { adminToken?: string; aiReply?: string; display?: string } = {},
 ): Promise<TestServerResult> {
   const dataDir = `/tmp/ap-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   mkdirSync(dataDir, { recursive: true });
@@ -54,6 +54,13 @@ export async function startTestServer(
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...(options.display === undefined
+        ? {}
+        : {
+            DISPLAY: options.display,
+            WAYLAND_DISPLAY: "",
+            XDG_SESSION_TYPE: "x11",
+          }),
       AP_E2E_DATA_DIR: dataDir,
       AP_ADMIN_TOKEN: options.adminToken ?? "",
       AP_E2E_AI_REPLY: options.aiReply ?? "",
