@@ -25,7 +25,9 @@ int main(int argc, char **argv) {
   XSelectInput(d,w,ExposureMask|KeyPressMask|ButtonPressMask);
   XMapWindow(d,w); XSetInputFocus(d,w,RevertToParent,CurrentTime);
   GC gc=XCreateGC(d,w,0,NULL); XSetForeground(d,gc,BlackPixel(d,0));
-  XFontStruct *font=XLoadQueryFont(d,"9x15"); if(font) XSetFont(d,gc,font->fid);
+  XFontStruct *font=XLoadQueryFont(d,"9x15");
+  if(!font) { fprintf(stderr,"X11 fixture requires the 9x15 font (install xfonts-base)\n"); XCloseDisplay(d); return 4; }
+  XSetFont(d,gc,font->fid);
   FILE *events=fopen(argv[1],"w"); setbuf(events,NULL);
   printf("READY %lu\n",w); fflush(stdout);
   for (;;) {

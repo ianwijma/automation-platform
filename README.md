@@ -135,7 +135,7 @@ Configure an OpenRouter or OpenAI-compatible endpoint, key and model in Settings
 bun run check                       # TypeScript, UI build, unit/integration tests
 bunx playwright install chromium
 bun run test:e2e                     # Browser + API tests
-bun run test:desktop                 # Owned Xvfb window; requires X11 dev tools
+bun run test:desktop                 # Owned Xvfb window; requires X11 dev tools and xfonts-base
 bun run build
 bun run test:portable                # Executable from an empty temporary directory
 cargo test --locked --manifest-path desktop/bridge/Cargo.toml
