@@ -1,0 +1,7 @@
+{
+  "uuid": "automation-platform@ianwijma.github.io",
+  "name": "Automation Platform Window Bridge",
+  "description": "Lists and focuses windows for Automation Platform. Capture and input still require portal consent.",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "version": 1
+}

@@ -10,8 +10,25 @@ export const test = base.extend<E2EFixtures>({
     const { startTestServer } = await import("./test-server.js");
     const server = await startTestServer();
     await use(server);
-    server.close();
+    await server.close();
   },
 });
 
 export { expect };
+
+export async function waitForRun(
+  request: import("@playwright/test").APIRequestContext,
+  url: string,
+  id: string,
+): Promise<any> {
+  let run: any;
+  await expect
+    .poll(async () => {
+      const response = await request.get(`${url}/api/runs/${id}`);
+      expect(response.ok()).toBeTruthy();
+      run = await response.json();
+      return run.status;
+    })
+    .not.toMatch(/^(queued|running)$/);
+  return run;
+}

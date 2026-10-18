@@ -17,9 +17,10 @@ const PLAN_TABLES = [
 
 function tableNames(db: ReturnType<typeof createDatabase>["db"]): string[] {
   const rows = db
-    .query<{ name: string }, []>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    )
+    .query<
+      { name: string },
+      []
+    >("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .all();
   return rows.map((r) => r.name);
 }
@@ -39,9 +40,10 @@ describe("database migration system", () => {
   test("_migrations table records applied migrations", () => {
     const db = createDatabase(":memory:");
     const rows = db.db
-      .query<{ id: number; name: string; applied_at: string }, []>(
-        "SELECT id, name, applied_at FROM _migrations ORDER BY id",
-      )
+      .query<
+        { id: number; name: string; applied_at: string },
+        []
+      >("SELECT id, name, applied_at FROM _migrations ORDER BY id")
       .all();
 
     expect(rows.length).toBeGreaterThanOrEqual(1);
@@ -79,7 +81,7 @@ describe("database migration system", () => {
     const db = createDatabase(":memory:");
     const tables = tableNames(db.db);
 
-    const expected = [...PLAN_TABLES, "_migrations"].sort();
+    const expected = [...PLAN_TABLES, "_migrations", "trigger_cursors"].sort();
     expect(tables.sort()).toEqual(expected);
 
     db.close();

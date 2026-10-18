@@ -147,30 +147,71 @@ describe("run-node API", () => {
       dbPath: ":memory:",
     };
 
-    server = createServer({ port: 0, host: "127.0.0.1", db, config, uiDist: MOCK_UI_DIR });
+    server = createServer({
+      port: 0,
+      host: "127.0.0.1",
+      db,
+      config,
+      uiDist: MOCK_UI_DIR,
+    });
     baseUrl = `http://127.0.0.1:${server.server.port}`;
   });
 
-  afterAll(() => {
-    if (server) { server.close(); server = null; }
-    if (existsSync(tmpDataDir)) rmSync(tmpDataDir, { recursive: true, force: true });
-    if (existsSync(MOCK_UI_DIR)) rmSync(MOCK_UI_DIR, { recursive: true, force: true });
+  afterAll(async () => {
+    if (server) {
+      await server.close();
+      server = null;
+    }
+    if (existsSync(tmpDataDir))
+      rmSync(tmpDataDir, { recursive: true, force: true });
+    if (existsSync(MOCK_UI_DIR))
+      rmSync(MOCK_UI_DIR, { recursive: true, force: true });
   });
 
   function createTestAppDb(): AppDatabase {
-    const db = new Database(":memory:");
-    db.exec(MIGRATION_SQL);
-    return new AppDatabase(db);
+    return createDatabase(":memory:");
   }
 
   test("POST /api/automations/:id/run-node/:nodeId executes a single node", async () => {
     const def = {
-      schemaVersion: 1, name: "Test", settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+      schemaVersion: 1,
+      name: "Test",
+      settings: {
+        runTimeoutSec: 3600,
+        savePayloads: true,
+        errorAutomationId: null,
+      },
       nodes: [
-        { id: "n1", type: "trigger.manual", typeVersion: 1, name: "Start", target: { kind: "local" }, params: {}, disabled: false, position: { x: 0, y: 0 } },
-        { id: "n2", type: "system.command", typeVersion: 1, name: "Echo", target: { kind: "local" }, params: { command: "echo hello-from-node" }, disabled: false, position: { x: 200, y: 0 } },
+        {
+          id: "n1",
+          type: "trigger.manual",
+          typeVersion: 1,
+          name: "Start",
+          target: { kind: "local" },
+          params: {},
+          disabled: false,
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "n2",
+          type: "system.command",
+          typeVersion: 1,
+          name: "Echo",
+          target: { kind: "local" },
+          params: { command: "echo hello-from-node" },
+          disabled: false,
+          position: { x: 200, y: 0 },
+        },
       ],
-      edges: [{ id: "e1", source: "n1", sourcePort: "out", target: "n2", targetPort: "in" }],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          sourcePort: "out",
+          target: "n2",
+          targetPort: "in",
+        },
+      ],
     };
 
     const createResp = await fetch(`${baseUrl}/api/automations`, {
@@ -178,15 +219,18 @@ describe("run-node API", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Run Node Test", definition: def }),
     });
-    const { id } = await createResp.json() as any;
+    const { id } = (await createResp.json()) as any;
 
-    const runResp = await fetch(`${baseUrl}/api/automations/${id}/run-node/n2`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
-    expect(runResp.status).toBe(201);
-    const run = await runResp.json() as any;
+    const runResp = await fetch(
+      `${baseUrl}/api/automations/${id}/run-node/n2`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(runResp.status).toBe(202);
+    const run = (await runResp.json()) as any;
     expect(run.id).toBeDefined();
     expect(run.automationId).toBe(id);
     expect(run.mode).toBe("partial");
@@ -194,12 +238,44 @@ describe("run-node API", () => {
 
   test("POST /api/automations/:id/run-node/:nodeId returns 404 for nonexistent node", async () => {
     const def = {
-      schemaVersion: 1, name: "Test", settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+      schemaVersion: 1,
+      name: "Test",
+      settings: {
+        runTimeoutSec: 3600,
+        savePayloads: true,
+        errorAutomationId: null,
+      },
       nodes: [
-        { id: "n1", type: "trigger.manual", typeVersion: 1, name: "Start", target: { kind: "local" }, params: {}, disabled: false, position: { x: 0, y: 0 } },
-        { id: "n2", type: "system.command", typeVersion: 1, name: "Echo", target: { kind: "local" }, params: { command: "echo hello" }, disabled: false, position: { x: 200, y: 0 } },
+        {
+          id: "n1",
+          type: "trigger.manual",
+          typeVersion: 1,
+          name: "Start",
+          target: { kind: "local" },
+          params: {},
+          disabled: false,
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "n2",
+          type: "system.command",
+          typeVersion: 1,
+          name: "Echo",
+          target: { kind: "local" },
+          params: { command: "echo hello" },
+          disabled: false,
+          position: { x: 200, y: 0 },
+        },
       ],
-      edges: [{ id: "e1", source: "n1", sourcePort: "out", target: "n2", targetPort: "in" }],
+      edges: [
+        {
+          id: "e1",
+          source: "n1",
+          sourcePort: "out",
+          target: "n2",
+          targetPort: "in",
+        },
+      ],
     };
 
     const createResp = await fetch(`${baseUrl}/api/automations`, {
@@ -207,22 +283,28 @@ describe("run-node API", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "Run Node 404 Node Test", definition: def }),
     });
-    const { id } = await createResp.json() as any;
+    const { id } = (await createResp.json()) as any;
 
-    const runResp = await fetch(`${baseUrl}/api/automations/${id}/run-node/nonexistent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const runResp = await fetch(
+      `${baseUrl}/api/automations/${id}/run-node/nonexistent`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
     expect(runResp.status).toBe(404);
   });
 
   test("POST /api/automations/:id/run-node/:nodeId returns 404 for nonexistent automation", async () => {
-    const runResp = await fetch(`${baseUrl}/api/automations/nonexistent/run-node/n1`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    const runResp = await fetch(
+      `${baseUrl}/api/automations/nonexistent/run-node/n1`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
     expect(runResp.status).toBe(404);
   });
 });

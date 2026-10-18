@@ -1,3 +1,4 @@
+import { portalCall } from "../core/desktop-driver.js";
 import type { CapabilityReport } from "../core/node-contract.js";
 
 async function commandExists(tool: string): Promise<boolean> {
@@ -13,7 +14,10 @@ async function commandExists(tool: string): Promise<boolean> {
   }
 }
 
-async function spawnCapture(cmd: string[], env?: Record<string, string>): Promise<string> {
+async function spawnCapture(
+  cmd: string[],
+  env?: Record<string, string>,
+): Promise<string> {
   try {
     const proc = Bun.spawn(cmd, {
       stdout: "pipe",
@@ -71,6 +75,10 @@ export async function probeCapabilities(): Promise<CapabilityReport> {
     "hyprctl",
     "swaymsg",
     "slurp",
+    "compare",
+    "identify",
+    "convert",
+    "gst-launch-1.0",
   ];
 
   const tools: string[] = [];
@@ -86,13 +94,29 @@ export async function probeCapabilities(): Promise<CapabilityReport> {
 
   const screenshotTools = ["maim", "scrot", "grim", "import"];
   const hasScreenshotTool = screenshotTools.some((t) => tools.includes(t));
-  const screen = display !== "none" && hasScreenshotTool;
+  let screen =
+    display === "x11" &&
+    hasScreenshotTool &&
+    !!(await spawnCapture(["xdotool", "getdisplaygeometry"])).trim();
 
-  let input: "xdotool" | "ydotool" | "none" = "none";
+  let input: CapabilityReport["input"] = "none";
   if (tools.includes("xdotool") && display === "x11") {
-    input = "xdotool";
-  } else if (tools.includes("ydotool")) {
-    input = "ydotool";
+    input = (await spawnCapture(["xdotool", "getdisplaygeometry"])).trim()
+      ? "xdotool"
+      : "none";
+  }
+  if (display === "wayland") {
+    try {
+      const status = await portalCall({ op: "status" });
+      screen =
+        status.portal === true &&
+        tools.includes("gst-launch-1.0") &&
+        tools.includes("convert");
+      input = status.portal === true ? "portal" : "none";
+    } catch {
+      screen = false;
+      input = "none";
+    }
   }
 
   const gpu = await detectGpu();

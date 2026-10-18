@@ -2,7 +2,10 @@ import { describe, test, expect, beforeEach } from "bun:test";
 import { Database } from "bun:sqlite";
 import { AgentDispatcher } from "../agent/dispatcher.js";
 import { rerunFromNode } from "./rerun.js";
-import type { RunRecord, NodeExecutionRecord } from "../core/execution-engine.js";
+import type {
+  RunRecord,
+  NodeExecutionRecord,
+} from "../core/execution-engine.js";
 
 const MIGRATION_SQL = `
 CREATE TABLE IF NOT EXISTS automations (
@@ -35,7 +38,11 @@ function makeDefinition() {
   return {
     schemaVersion: 1 as const,
     name: "Test Rerun",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
     nodes: [
       {
         id: "node-1",
@@ -49,7 +56,7 @@ function makeDefinition() {
       },
       {
         id: "node-2",
-        type: "action.shell",
+        type: "system.command",
         typeVersion: 1,
         name: "Shell",
         target: { kind: "local" as const },
@@ -62,9 +69,9 @@ function makeDefinition() {
       {
         id: "edge-1",
         source: "node-1",
-        sourcePort: "output",
+        sourcePort: "out",
         target: "node-2",
-        targetPort: "input",
+        targetPort: "in",
       },
     ],
   };
@@ -90,10 +97,18 @@ describe("rerunFromNode", () => {
     const defJson = JSON.stringify(def);
     const versionId = "v-auto-1";
     db.prepare(
-      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("auto-1", "Test", versionId, defJson, JSON.stringify(def.settings), now, now);
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "auto-1",
+      "Test",
+      versionId,
+      defJson,
+      JSON.stringify(def.settings),
+      now,
+      now,
+    );
     db.prepare(
-      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run(versionId, "auto-1", 1, defJson, now);
 
     const run: RunRecord = {
@@ -114,7 +129,7 @@ describe("rerunFromNode", () => {
           status: "success",
           attempt: 0,
           simulated: false,
-          input: null,
+          input: [{ json: { triggered: true } }],
           output: [{ json: { triggered: true } }],
           pinned: false,
           startedAt: now,
@@ -125,7 +140,12 @@ describe("rerunFromNode", () => {
     };
     dispatcher.saveRun(run);
 
-    const result = await rerunFromNode(db, dispatcher, "run-1", "nonexistent-node");
+    const result = await rerunFromNode(
+      db,
+      dispatcher,
+      "run-1",
+      "nonexistent-node",
+    );
     expect(result).toBeNull();
   });
 
@@ -149,7 +169,7 @@ describe("rerunFromNode", () => {
           status: "success",
           attempt: 0,
           simulated: false,
-          input: null,
+          input: [{ json: { triggered: true } }],
           output: [{ json: { data: "test" } }],
           pinned: false,
           startedAt: now,
@@ -170,10 +190,18 @@ describe("rerunFromNode", () => {
     const defJson = JSON.stringify(def);
     const versionId = "v-auto-rerun";
     db.prepare(
-      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("auto-rerun", "Rerun Test", versionId, defJson, JSON.stringify(def.settings), now, now);
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "auto-rerun",
+      "Rerun Test",
+      versionId,
+      defJson,
+      JSON.stringify(def.settings),
+      now,
+      now,
+    );
     db.prepare(
-      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run(versionId, "auto-rerun", 1, defJson, now);
 
     const nodeExec1: NodeExecutionRecord = {
@@ -184,7 +212,7 @@ describe("rerunFromNode", () => {
       status: "success",
       attempt: 0,
       simulated: false,
-      input: null,
+      input: [{ json: { triggered: true } }],
       output: [{ json: { triggered: true } }],
       pinned: false,
       startedAt: now,
@@ -199,7 +227,7 @@ describe("rerunFromNode", () => {
       status: "success",
       attempt: 0,
       simulated: false,
-      input: null,
+      input: [{ json: { triggered: true } }],
       output: [{ json: { stdout: "hello" } }],
       pinned: false,
       startedAt: now,
@@ -242,10 +270,18 @@ describe("rerunFromNode", () => {
     const defJson = JSON.stringify(def);
     const versionId = "v-auto-err";
     db.prepare(
-      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("auto-err", "Error Test", versionId, defJson, JSON.stringify(def.settings), now, now);
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "auto-err",
+      "Error Test",
+      versionId,
+      defJson,
+      JSON.stringify(def.settings),
+      now,
+      now,
+    );
     db.prepare(
-      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run(versionId, "auto-err", 1, defJson, now);
 
     const nodeExec: NodeExecutionRecord = {
@@ -256,7 +292,7 @@ describe("rerunFromNode", () => {
       status: "success",
       attempt: 0,
       simulated: false,
-      input: null,
+      input: [{ json: { triggered: true } }],
       output: [{ json: { triggered: true } }],
       pinned: false,
       startedAt: now,
@@ -287,7 +323,7 @@ describe("rerunFromNode", () => {
   test("returns null when automation has no version or draft", async () => {
     const now = new Date().toISOString();
     db.prepare(
-      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
     ).run("auto-no-def", "No Def", null, null, null, now, now);
 
     const nodeExec: NodeExecutionRecord = {
@@ -298,7 +334,7 @@ describe("rerunFromNode", () => {
       status: "success",
       attempt: 0,
       simulated: false,
-      input: null,
+      input: [{ json: { triggered: true } }],
       output: [{ json: { data: "test" } }],
       pinned: false,
       startedAt: now,

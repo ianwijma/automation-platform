@@ -1,17 +1,28 @@
 import { test, expect } from "../fixtures/base.js";
 
 test.describe("Fleet Execution", () => {
-  test("GET /api/agents returns empty list (no agents connected)", async ({ request, testServer }) => {
+  test("GET /api/agents includes the local agent", async ({
+    request,
+    testServer,
+  }) => {
     const resp = await request.get(`${testServer.url}/api/agents`);
     expect(resp.ok()).toBeTruthy();
     const body = await resp.json();
-    expect(body).toEqual([]);
+    expect(body).toHaveLength(1);
+    expect(body[0].id).toBe("local");
+    expect(body[0].status).toBe("online");
   });
 
-  test("POST /api/agents/join-tokens creates a token", async ({ request, testServer }) => {
-    const resp = await request.post(`${testServer.url}/api/agents/join-tokens`, {
-      data: { uses: 5, ttlHours: 24 },
-    });
+  test("POST /api/agents/join-tokens creates a token", async ({
+    request,
+    testServer,
+  }) => {
+    const resp = await request.post(
+      `${testServer.url}/api/agents/join-tokens`,
+      {
+        data: { uses: 5, ttlHours: 24 },
+      },
+    );
     expect(resp.status()).toBe(201);
     const body = await resp.json();
     expect(body).toHaveProperty("token");
@@ -20,31 +31,51 @@ test.describe("Fleet Execution", () => {
   });
 
   test("join token with defaults", async ({ request, testServer }) => {
-    const resp = await request.post(`${testServer.url}/api/agents/join-tokens`, {
-      data: {},
-    });
+    const resp = await request.post(
+      `${testServer.url}/api/agents/join-tokens`,
+      {
+        data: {},
+      },
+    );
     expect(resp.status()).toBe(201);
     const body = await resp.json();
     expect(body).toHaveProperty("token");
     expect(body.usesLeft).toBe(1);
   });
 
-  test("PUT /api/agents/:id/tags returns 404 for non-existent agent", async ({ request, testServer }) => {
-    const resp = await request.put(`${testServer.url}/api/agents/nonexistent-agent-id/tags`, {
-      data: { tags: ["prod"] },
-    });
+  test("PUT /api/agents/:id/tags returns 404 for non-existent agent", async ({
+    request,
+    testServer,
+  }) => {
+    const resp = await request.put(
+      `${testServer.url}/api/agents/nonexistent-agent-id/tags`,
+      {
+        data: { tags: ["prod"] },
+      },
+    );
     expect(resp.status()).toBe(404);
   });
 
-  test("POST /api/agents/:id/update returns 404 for disconnected agent", async ({ request, testServer }) => {
-    const resp = await request.post(`${testServer.url}/api/agents/nonexistent-agent-id/update`);
-    expect(resp.status()).toBe(404);
+  test("POST /api/agents/:id/update refuses unsigned remote updates", async ({
+    request,
+    testServer,
+  }) => {
+    const resp = await request.post(
+      `${testServer.url}/api/agents/nonexistent-agent-id/update`,
+    );
+    expect(resp.status()).toBe(409);
   });
 
-  test("token is hashed in DB — cannot retrieve plaintext after creation", async ({ request, testServer }) => {
-    const resp = await request.post(`${testServer.url}/api/agents/join-tokens`, {
-      data: { uses: 1 },
-    });
+  test("token is hashed in DB — cannot retrieve plaintext after creation", async ({
+    request,
+    testServer,
+  }) => {
+    const resp = await request.post(
+      `${testServer.url}/api/agents/join-tokens`,
+      {
+        data: { uses: 1 },
+      },
+    );
     const body = await resp.json();
     const token = body.token;
 

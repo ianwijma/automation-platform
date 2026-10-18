@@ -1,3 +1,18 @@
+import { validateDefinition } from "../core/schemas.js";
+import { z } from "zod";
+export const diffSchema = z.object({
+  op: z.enum([
+    "add-node",
+    "remove-node",
+    "update-node-params",
+    "add-edge",
+    "remove-edge",
+    "update-settings",
+  ]),
+  path: z.string(),
+  value: z.unknown(),
+  description: z.string(),
+});
 import type {
   AutomationDefinition,
   AutomationNode,
@@ -35,6 +50,7 @@ export class AiService {
 
     const response = await fetch(`${this.endpoint}/chat/completions`, {
       method: "POST",
+      signal: AbortSignal.timeout(60_000),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
@@ -49,7 +65,9 @@ export class AiService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`AI API error ${response.status}: ${errorText}`);
+      throw new Error(
+        `AI API error ${response.status}: ${this.apiKey ? errorText.replaceAll(this.apiKey, "[REDACTED]").slice(0, 2000) : errorText.slice(0, 2000)}`,
+      );
     }
 
     const data = (await response.json()) as {
@@ -63,6 +81,7 @@ export class AiService {
 
   async listModels(): Promise<string[]> {
     const response = await fetch(`${this.endpoint}/models`, {
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
       },
@@ -100,14 +119,11 @@ export class AiService {
     prompt += "```json\n";
     prompt += "[\n";
     prompt += "  {\n";
-    prompt +=
-      '    "op": "add-node",\n';
-    prompt +=
-      '    "path": "nodes",\n';
+    prompt += '    "op": "add-node",\n';
+    prompt += '    "path": "nodes",\n';
     prompt +=
       '    "value": { "id": "...", "type": "...", "typeVersion": 1, "name": "...", "target": { "kind": "local" }, "params": {}, "disabled": false, "position": { "x": 0, "y": 0 } },\n';
-    prompt +=
-      '    "description": "Add a manual trigger node"\n';
+    prompt += '    "description": "Add a manual trigger node"\n';
     prompt += "  }\n";
     prompt += "]\n";
     prompt += "```\n\n";
@@ -115,8 +131,7 @@ export class AiService {
       "Available operations: add-node, remove-node, update-node-params, add-edge, remove-edge, update-settings\n\n";
     prompt +=
       'For remove-node and update-node-params, "path" should be the node ID.\n';
-    prompt +=
-      'For remove-edge, "path" should be the edge ID.\n';
+    prompt += 'For remove-edge, "path" should be the edge ID.\n';
     prompt +=
       'For add-edge, "value" should be the full edge object with id, source, sourcePort, target, targetPort.\n';
     prompt +=
@@ -124,14 +139,16 @@ export class AiService {
 
     if (automation) {
       prompt += "The current automation definition is:\n\n";
-      prompt +=
-        "```json\n" + JSON.stringify(automation, null, 2) + "\n```\n\n";
+      prompt += "```json\n" + JSON.stringify(automation, null, 2) + "\n```\n\n";
     }
 
     return prompt;
   }
 
-  private parseResponse(content: string): { message: string; diffs?: AiDiff[] } {
+  private parseResponse(content: string): {
+    message: string;
+    diffs?: AiDiff[];
+  } {
     const jsonBlockRegex = /```json\s*\n([\s\S]*?)\n```/g;
     let message = content;
     const foundDiffs: AiDiff[] = [];
@@ -147,12 +164,14 @@ export class AiService {
               typeof item.path === "string" &&
               typeof item.description === "string"
             ) {
-              foundDiffs.push({
-                op: item.op as AiDiff["op"],
-                path: item.path,
-                value: item.value,
-                description: item.description,
-              });
+              foundDiffs.push(
+                diffSchema.parse({
+                  op: item.op as AiDiff["op"],
+                  path: item.path,
+                  value: item.value,
+                  description: item.description,
+                }) as AiDiff,
+              );
             }
           }
         }
@@ -173,7 +192,8 @@ export class AiService {
     definition: AutomationDefinition,
     diffs: AiDiff[],
   ): AutomationDefinition {
-    let nodes = [...definition.nodes];
+    diffs = z.array(diffSchema).min(1).max(200).parse(diffs) as AiDiff[];
+    let nodes = structuredClone(definition.nodes);
     let edges = [...definition.edges];
     let settings = { ...definition.settings };
 
@@ -181,14 +201,15 @@ export class AiService {
       switch (diff.op) {
         case "add-node": {
           const node = diff.value as AutomationNode;
-          if (!node.id || !node.type) break;
+          if (!node?.id || !node.type) throw new Error("Invalid proposed node");
           nodes = [...nodes, node];
           break;
         }
         case "remove-node": {
           const nodeId = diff.path;
           const exists = nodes.some((n) => n.id === nodeId);
-          if (!exists) break;
+          if (!exists)
+            throw new Error("Proposal references a missing graph element");
           nodes = nodes.filter((n) => n.id !== nodeId);
           edges = edges.filter(
             (e) => e.source !== nodeId && e.target !== nodeId,
@@ -198,7 +219,8 @@ export class AiService {
         case "update-node-params": {
           const nodeId = diff.path;
           const nodeIdx = nodes.findIndex((n) => n.id === nodeId);
-          if (nodeIdx === -1) break;
+          if (nodeIdx === -1)
+            throw new Error("Proposal references a missing node");
           const newParams = diff.value as Record<string, unknown>;
           nodes = nodes.map((n) =>
             n.id === nodeId
@@ -209,14 +231,16 @@ export class AiService {
         }
         case "add-edge": {
           const edge = diff.value as AutomationEdge;
-          if (!edge.id || !edge.source || !edge.target) break;
+          if (!edge?.id || !edge.source || !edge.target)
+            throw new Error("Invalid proposed edge");
           edges = [...edges, edge];
           break;
         }
         case "remove-edge": {
           const edgeId = diff.path;
           const exists = edges.some((e) => e.id === edgeId);
-          if (!exists) break;
+          if (!exists)
+            throw new Error("Proposal references a missing graph element");
           edges = edges.filter((e) => e.id !== edgeId);
           break;
         }
@@ -228,11 +252,6 @@ export class AiService {
       }
     }
 
-    return {
-      ...definition,
-      settings,
-      nodes,
-      edges,
-    };
+    return validateDefinition({ ...definition, settings, nodes, edges });
   }
 }

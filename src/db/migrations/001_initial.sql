@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS automations (
 
 CREATE TABLE IF NOT EXISTS automation_versions (
   id TEXT PRIMARY KEY,
-  automation_id TEXT NOT NULL REFERENCES automations(id),
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
   version_no INTEGER NOT NULL,
   definition_json TEXT NOT NULL,
   label TEXT,
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS agents (
 
 CREATE TABLE IF NOT EXISTS runs (
   id TEXT PRIMARY KEY,
-  automation_id TEXT NOT NULL REFERENCES automations(id),
-  version_id TEXT REFERENCES automation_versions(id),
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  version_id TEXT REFERENCES automation_versions(id) ON DELETE SET NULL,
   mode TEXT NOT NULL CHECK(mode IN ('manual','trigger','dry','partial')),
   status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','success','error','interrupted','cancelled')),
   trigger_json TEXT,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE TABLE IF NOT EXISTS node_executions (
   id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES runs(id),
+  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   node_id TEXT NOT NULL,
   agent_id TEXT NOT NULL REFERENCES agents(id),
   status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('success','error','timeout','cancelled','interrupted','queued','running')),
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
   size INTEGER NOT NULL,
   mime TEXT NOT NULL,
   name TEXT NOT NULL,
-  created_run_id TEXT REFERENCES runs(id),
+  created_run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
   expires_at TEXT NOT NULL
 );
 
@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS env_vars (
 );
 
 CREATE TABLE IF NOT EXISTS state (
-  automation_id TEXT NOT NULL REFERENCES automations(id),
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
   key TEXT NOT NULL,
   value_json TEXT NOT NULL,
   updated_at TEXT DEFAULT (datetime('now')),

@@ -12,7 +12,7 @@ export interface AppConfig {
 
 const DEFAULT_PORT = 7480;
 const DEFAULT_STANDALONE_HOST = "127.0.0.1";
-const DEFAULT_PLATFORM_HOST = "0.0.0.0";
+const DEFAULT_PLATFORM_HOST = "127.0.0.1";
 const DEFAULT_DATA_DIR = "~/.config/ap";
 
 function expandHome(path: string): string {
@@ -36,7 +36,9 @@ function envInt(key: string): number | undefined {
 function envBool(key: string): boolean | undefined {
   const raw = envString(key);
   if (raw === undefined) return undefined;
-  return raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes";
+  return (
+    raw === "1" || raw.toLowerCase() === "true" || raw.toLowerCase() === "yes"
+  );
 }
 
 export function resolveConfig(

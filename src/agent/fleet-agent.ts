@@ -1,4 +1,5 @@
-import { readFileSync, existsSync } from "node:fs";
+import { installBundledHelper } from "../core/bundled-assets.js";
+import { readFileSync, existsSync, writeFileSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { hostname } from "node:os";
 import type { AppConfig } from "../cli/config.js";
@@ -11,6 +12,7 @@ interface AgentConfig {
 }
 
 export async function startFleetAgent(config: AppConfig): Promise<void> {
+  installBundledHelper(config.dataDir);
   const agentConfigPath = join(config.dataDir, "agent.json");
 
   if (!existsSync(agentConfigPath)) {
@@ -18,7 +20,9 @@ export async function startFleetAgent(config: AppConfig): Promise<void> {
     process.exit(1);
   }
 
-  const agentConfig: AgentConfig = JSON.parse(readFileSync(agentConfigPath, "utf-8"));
+  const agentConfig: AgentConfig = JSON.parse(
+    readFileSync(agentConfigPath, "utf-8"),
+  );
 
   const version = "0.1.0";
   const name = process.env.AP_AGENT_NAME ?? `agent-${hostname()}`;
@@ -27,6 +31,13 @@ export async function startFleetAgent(config: AppConfig): Promise<void> {
     name,
     version,
     token: agentConfig.token,
+    onIdentity: (token) => {
+      agentConfig.token = token;
+      writeFileSync(agentConfigPath, JSON.stringify(agentConfig), {
+        mode: 0o600,
+      });
+      chmodSync(agentConfigPath, 0o600);
+    },
   });
 
   let shuttingDown = false;

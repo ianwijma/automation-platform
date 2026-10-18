@@ -39,9 +39,13 @@ interface AppStore {
   rfNodes: FlowNode[];
   rfEdges: Edge[];
   isDirty: boolean;
+  invalidParams: Record<string, string>;
 
   selectedNodeId: string | null;
   dryRun: boolean;
+  pinData: Record<string, import("./types").NodeItem[]>;
+  setPin: (nodeId: string, items: import("./types").NodeItem[] | null) => void;
+  aiBaseRevision: string | null;
 
   runs: RunResponse[];
   currentRunId: string | null;
@@ -101,7 +105,11 @@ interface AppStore {
   fetchRuns: () => Promise<void>;
   fetchNodeExecutions: (runId: string) => Promise<void>;
   setCurrentRunId: (id: string | null) => void;
-  executeNode: (nodeId: string, fresh?: boolean, inputData?: any[]) => Promise<void>;
+  executeNode: (
+    nodeId: string,
+    fresh?: boolean,
+    inputData?: any[],
+  ) => Promise<void>;
   setSelectedNodeExecId: (id: string | null) => void;
 
   fetchVersions: () => Promise<void>;
@@ -140,9 +148,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
   rfNodes: [],
   rfEdges: [],
   isDirty: false,
+  invalidParams: {},
 
   selectedNodeId: null,
   dryRun: false,
+  pinData: {},
+  aiBaseRevision: null,
+  setPin: (nodeId, items) =>
+    set((s) => {
+      const pinData = { ...s.pinData };
+      if (items) pinData[nodeId] = items;
+      else delete pinData[nodeId];
+      return { pinData };
+    }),
 
   runs: [],
   currentRunId: null,
@@ -180,8 +198,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const automations = await api.listAutomations();
       set({ automations });
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -192,14 +210,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const agents: AgentResponse[] = await res.json();
         set({ agents });
       }
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
   selectAutomation: async (id: string | null) => {
+    if (
+      get().isDirty &&
+      get().currentAutomationId !== id &&
+      !window.confirm("Discard unsaved changes?")
+    )
+      return;
     set({
       currentAutomationId: id,
+      aiMessages: [],
+      aiDiffApproval: {},
+      aiBaseRevision: null,
+      aiLoading: false,
+      pinData: {},
+      runs: [],
       selectedNodeId: null,
       currentRunId: null,
       nodeExecutions: {},
@@ -208,16 +238,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
       versions: [],
     });
     if (!id) {
-      set({ currentDefinition: null, rfNodes: [], rfEdges: [], isDirty: false });
+      set({
+        currentDefinition: null,
+        rfNodes: [],
+        rfEdges: [],
+        isDirty: false,
+      });
       return;
     }
     try {
       const resp = await api.getAutomation(id);
+      if (get().currentAutomationId !== id) return;
       const def = resp.draft ?? makeDefaultDefinition(resp.name);
       const { nodes, edges } = definitionToFlow(def);
-      set({ currentDefinition: def, rfNodes: nodes, rfEdges: edges, isDirty: false });
+      set({
+        currentDefinition: def,
+        rfNodes: nodes,
+        rfEdges: edges,
+        isDirty: false,
+        invalidParams: {},
+      });
     } catch {
-      set({ currentDefinition: null, rfNodes: [], rfEdges: [] });
+      if (get().currentAutomationId === id)
+        set({ currentDefinition: null, rfNodes: [], rfEdges: [] });
     }
   },
 
@@ -225,7 +268,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const def = makeDefaultDefinition(name);
       const resp = await api.createAutomation(name, def);
-      set((s) => ({ automations: [...s.automations, resp], actionError: null }));
+      set((s) => ({
+        automations: [...s.automations, resp],
+        actionError: null,
+      }));
       await get().selectAutomation(resp.id);
     } catch (e) {
       set({ actionError: (e as Error).message });
@@ -237,8 +283,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await api.deleteAutomation(id);
       set((s) => ({
         automations: s.automations.filter((a) => a.id !== id),
-        currentAutomationId: s.currentAutomationId === id ? null : s.currentAutomationId,
-        currentDefinition: s.currentAutomationId === id ? null : s.currentDefinition,
+        currentAutomationId:
+          s.currentAutomationId === id ? null : s.currentAutomationId,
+        currentDefinition:
+          s.currentAutomationId === id ? null : s.currentDefinition,
         rfNodes: s.currentAutomationId === id ? [] : s.rfNodes,
         rfEdges: s.currentAutomationId === id ? [] : s.rfEdges,
         actionError: null,
@@ -249,7 +297,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   saveAutomation: async () => {
-    const { currentAutomationId, rfNodes, rfEdges, currentDefinition, isPreviewMode } = get();
+    if (Object.keys(get().invalidParams).length) {
+      set({
+        saveError: "Correct invalid parameter values before saving or running.",
+        isDirty: true,
+      });
+      return;
+    }
+    const {
+      currentAutomationId,
+      rfNodes,
+      rfEdges,
+      currentDefinition,
+      isPreviewMode,
+    } = get();
     if (!currentAutomationId || !currentDefinition || isPreviewMode) return;
     const def = flowToDefinition(
       rfNodes,
@@ -257,12 +318,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
       currentDefinition.name,
       currentDefinition.settings,
     );
+    const savedNodes = rfNodes,
+      savedEdges = rfEdges;
     set({ currentDefinition: def, saveError: null });
     try {
-      const resp = await api.updateAutomation(currentAutomationId, def);
+      const resp = await api.updateAutomation(
+        currentAutomationId,
+        def,
+        get().automations.find((a) => a.id === currentAutomationId)?.revision,
+      );
       set((s) => ({
         automations: s.automations.map((a) => (a.id === resp.id ? resp : a)),
-        isDirty: false,
+        isDirty:
+          s.currentAutomationId === currentAutomationId &&
+          (s.rfNodes !== savedNodes ||
+            s.rfEdges !== savedEdges ||
+            s.currentDefinition !== def),
         saveError: null,
       }));
     } catch (e) {
@@ -271,14 +342,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setRfNodes: (nodes: FlowNode[]) => {
+    if (get().isPreviewMode) return;
     set({ rfNodes: nodes, isDirty: true });
   },
 
   setRfEdges: (edges: Edge[]) => {
+    if (get().isPreviewMode) return;
     set({ rfEdges: edges, isDirty: true });
   },
 
   addNode: (nodeType, position, name, defaultParams, _inputs, _outputs) => {
+    if (get().isPreviewMode) return;
     const id = generateNodeId();
     const category = nodeType.split(".")[0] ?? "";
     const resolvedCategory =
@@ -313,6 +387,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateNodeData: (id, data) => {
+    if (get().isPreviewMode) return;
     set((s) => ({
       rfNodes: s.rfNodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, ...data } } : n,
@@ -322,8 +397,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   removeNode: (id) => {
+    if (get().isPreviewMode) return;
     set((s) => ({
       rfNodes: s.rfNodes.filter((n) => n.id !== id),
+      invalidParams: Object.fromEntries(
+        Object.entries(s.invalidParams).filter(
+          ([key]) => !key.startsWith(id + ":"),
+        ),
+      ),
       rfEdges: s.rfEdges.filter((e) => e.source !== id && e.target !== id),
       selectedNodeId: s.selectedNodeId === id ? null : s.selectedNodeId,
       isDirty: true,
@@ -331,15 +412,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateNodePosition: (id, position) => {
+    if (get().isPreviewMode) return;
     set((s) => ({
-      rfNodes: s.rfNodes.map((n) =>
-        n.id === id ? { ...n, position } : n,
-      ),
+      rfNodes: s.rfNodes.map((n) => (n.id === id ? { ...n, position } : n)),
       isDirty: true,
     }));
   },
 
   addEdge: (connection) => {
+    if (get().isPreviewMode) return;
     const source = connection.source;
     const target = connection.target;
     const sourceHandle = connection.sourceHandle ?? "out";
@@ -374,6 +455,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   removeEdge: (id) => {
+    if (get().isPreviewMode) return;
     set((s) => ({
       rfEdges: s.rfEdges.filter((e) => e.id !== id),
       isDirty: true,
@@ -385,18 +467,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   runCurrentAutomation: async () => {
     const { currentAutomationId, dryRun } = get();
-    if (!currentAutomationId) return;
+    if (!currentAutomationId || get().isPreviewMode) return;
 
     await get().saveAutomation();
+    if (
+      get().saveError ||
+      get().isDirty ||
+      get().currentAutomationId !== currentAutomationId
+    )
+      return;
 
     try {
       const run = await api.runAutomation(currentAutomationId, {
-        mode: "manual",
+        mode: dryRun ? "dry" : "manual",
         dryRun,
+        pinData: get().pinData,
       });
       set((s) => ({ runs: [run, ...s.runs], currentRunId: run.id }));
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -404,9 +493,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { currentAutomationId } = get();
     try {
       const runs = await api.listRuns(currentAutomationId ?? undefined);
-      set({ runs });
-    } catch {
-      /* ignore */
+      if (get().currentAutomationId === currentAutomationId) set({ runs });
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -417,8 +506,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((s) => ({
         nodeExecutions: { ...s.nodeExecutions, [runId]: executions },
       }));
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -428,10 +517,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const { currentAutomationId, currentDefinition, saveAutomation } = get();
     if (!currentAutomationId || !currentDefinition) return;
 
+    if (get().isPreviewMode) return;
     await saveAutomation();
+    if (
+      get().saveError ||
+      get().isDirty ||
+      get().currentAutomationId !== currentAutomationId
+    )
+      return;
 
     try {
-      const run = await api.runNode(currentAutomationId, nodeId, { fresh, inputData });
+      const run = await api.runNode(currentAutomationId, nodeId, {
+        fresh,
+        inputData,
+        dryRun: get().dryRun,
+      });
       set((s) => ({
         runs: [run, ...s.runs],
         currentRunId: run.id,
@@ -445,7 +545,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       if (targetExec) {
         set({ selectedNodeExecId: targetExec.id });
       }
-    } catch {}
+    } catch (error) {
+      set({ actionError: (error as Error).message });
+    }
   },
 
   setSelectedNodeExecId: (id) => set({ selectedNodeExecId: id }),
@@ -456,8 +558,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const versions = await api.listVersions(currentAutomationId);
       set({ versions });
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -485,12 +587,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   revertToVersion: async (versionNo: number) => {
-    if (!window.confirm("Are you sure you want to revert to this version?")) return;
+    if (!window.confirm("Are you sure you want to revert to this version?"))
+      return;
     const { currentAutomationId } = get();
     if (!currentAutomationId) return;
     try {
       const resp = await api.revertToVersion(currentAutomationId, versionNo);
-      const { nodes, edges } = definitionToFlow(resp.draft ?? makeDefaultDefinition(resp.name));
+      const { nodes, edges } = definitionToFlow(
+        resp.draft ?? makeDefaultDefinition(resp.name),
+      );
       set({
         currentDefinition: resp.draft,
         rfNodes: nodes,
@@ -500,8 +605,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         previewVersion: null,
       });
       await get().fetchVersions();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -511,13 +616,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       await api.labelVersion(currentAutomationId, versionId, label);
       await get().fetchVersions();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
   sendAiMessage: async (message: string) => {
     const { currentAutomationId, aiMessages } = get();
+    if (get().isPreviewMode) return;
+    await get().saveAutomation();
+    if (get().saveError || get().isDirty) return;
     const userMsg: AiChatMessage = {
       id: `ai-${++aiMsgId}`,
       role: "user",
@@ -540,6 +648,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         chatHistory,
         currentAutomationId ?? undefined,
       );
+      if (get().currentAutomationId !== currentAutomationId) return;
+      set({ aiBaseRevision: result.baseRevision ?? null });
       const assistantMsg: AiChatMessage = {
         id: `ai-${++aiMsgId}`,
         role: "assistant",
@@ -551,6 +661,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         aiLoading: false,
       }));
     } catch (e) {
+      if (get().currentAutomationId !== currentAutomationId) return;
       const errorMsg: AiChatMessage = {
         id: `ai-${++aiMsgId}`,
         role: "assistant",
@@ -574,6 +685,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   applyApprovedDiffs: async () => {
     const { currentAutomationId, aiMessages, aiDiffApproval } = get();
+    if (get().isPreviewMode || get().isDirty || !get().aiBaseRevision) {
+      set({
+        actionError: "Save your changes and request a fresh AI proposal first.",
+      });
+      return;
+    }
     if (!currentAutomationId) return;
 
     const allDiffs: AiDiff[] = [];
@@ -589,20 +706,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     if (allDiffs.length === 0) return;
+    const savedDefinition = get().currentDefinition;
 
     try {
-      const result = await api.applyAiDiffs(currentAutomationId, allDiffs);
+      const result = await api.applyAiDiffs(
+        currentAutomationId,
+        allDiffs,
+        get().aiBaseRevision!,
+      );
+      if (get().currentAutomationId !== currentAutomationId) return;
+      if (get().isDirty || get().currentDefinition !== savedDefinition) {
+        set({
+          actionError:
+            "AI changes were saved while you edited. Reload the draft before continuing.",
+        });
+        return;
+      }
       const { nodes, edges } = definitionToFlow(result.definition);
       set({
         currentDefinition: result.definition,
+        automations: get().automations.map((a) =>
+          a.id === currentAutomationId
+            ? { ...a, draft: result.definition, revision: result.revision }
+            : a,
+        ),
+        aiBaseRevision: null,
         rfNodes: nodes,
         rfEdges: edges,
         isDirty: false,
         aiDiffApproval: {},
       });
       await get().fetchVersions();
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -638,8 +774,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const settings = await api.getSettings();
       set({ aiSettings: settings });
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 
@@ -647,8 +783,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     try {
       const result = await api.updateSettings(settings);
       set({ aiSettings: result });
-    } catch {
-      /* ignore */
+    } catch (error) {
+      set({ actionError: (error as Error).message });
     }
   },
 }));

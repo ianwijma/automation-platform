@@ -1,15 +1,14 @@
+import { createHash } from "node:crypto";
+import { z } from "zod";
+const revision = (value: unknown) =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
 import type { Database } from "bun:sqlite";
 import type { AiChatRequest, AiApplyRequest } from "../core/api-types.js";
 import { AiService } from "./ai-service.js";
 import { getAiSettings } from "../core/ai-settings.js";
 import { getAutomation, updateAutomation } from "./automations.js";
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Token",
-  "Access-Control-Max-Age": "86400",
-};
+const CORS_HEADERS: Record<string, string> = {};
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -26,7 +25,21 @@ export async function handleAiChat(
   req: Request,
 ): Promise<Response> {
   try {
-    const body = (await req.json()) as AiChatRequest;
+    const body = z
+      .object({
+        messages: z
+          .array(
+            z.object({
+              role: z.enum(["user", "assistant"]),
+              content: z.string().max(100_000),
+            }),
+          )
+          .min(1)
+          .max(100),
+        automationId: z.string().optional(),
+        model: z.string().min(1).optional(),
+      })
+      .parse(await req.json());
     const settings = getAiSettings(db);
 
     if (!settings.apiKey) {
@@ -49,9 +62,15 @@ export async function handleAiChat(
     }
 
     const result = await service.chat(body.messages, automation);
-    return json(result);
-  } catch {
-    return json({ error: "AI service error" }, 500);
+    return json({
+      ...result,
+      baseRevision: automation ? revision(automation) : undefined,
+    });
+  } catch (error) {
+    return json(
+      { error: error instanceof Error ? error.message : "AI service error" },
+      400,
+    );
   }
 }
 
@@ -66,15 +85,24 @@ export async function handleAiApply(
       return json({ error: "Automation not found" }, 404);
     }
 
+    if (body.baseRevision !== revision(autoResp.draft))
+      return json({ error: "Draft changed; request a fresh AI proposal" }, 409);
     const newDefinition = AiService.applyDiffs(autoResp.draft, body.diffs);
     const updated = updateAutomation(db, body.automationId, newDefinition);
     if (!updated) {
       return json({ error: "Failed to update automation" }, 500);
     }
 
-    return json({ automationId: body.automationId, definition: newDefinition });
-  } catch {
-    return json({ error: "AI service error" }, 500);
+    return json({
+      automationId: body.automationId,
+      definition: newDefinition,
+      revision: updated.revision,
+    });
+  } catch (error) {
+    return json(
+      { error: error instanceof Error ? error.message : "AI service error" },
+      400,
+    );
   }
 }
 

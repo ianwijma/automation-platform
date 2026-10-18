@@ -1,3 +1,4 @@
+import { sealSecret, openSecret } from "./secret-store.js";
 import type { AppDatabase } from "../db/database.js";
 import type { CredentialVault } from "./credential-vault.js";
 
@@ -60,11 +61,17 @@ export class EnvResolver {
     );
   }
 
-  private selectRow(scope: string, scopeId: string | null, key: string): EnvVarRow | undefined {
+  private selectRow(
+    scope: string,
+    scopeId: string | null,
+    key: string,
+  ): EnvVarRow | undefined {
     if (scopeId === null) {
       return this.stmtSelectNull.get(scope, key) as EnvVarRow | undefined;
     }
-    return this.stmtSelectNonNull.get(scope, scopeId, key) as EnvVarRow | undefined;
+    return this.stmtSelectNonNull.get(scope, scopeId, key) as
+      | EnvVarRow
+      | undefined;
   }
 
   setVar(
@@ -74,6 +81,15 @@ export class EnvResolver {
     value: string,
     isSecret: boolean,
   ): void {
+    if (!["global", "automation", "machine"].includes(scope))
+      throw new Error("Invalid environment scope");
+    if (scope !== "global" && !scopeId) throw new Error("Scope ID required");
+    if (typeof value !== "string")
+      throw new Error("Environment value must be a string");
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+      throw new Error("Invalid environment variable name");
+    if (scope === "global") scopeId = null;
+    if (isSecret) value = sealSecret(this.db.db, value);
     const existing = this.selectRow(scope, scopeId, key);
 
     if (existing) {
@@ -153,47 +169,51 @@ export class EnvResolver {
       .query<EnvVarRow, [string]>("SELECT * FROM env_vars WHERE scope = ?")
       .all("global");
     for (const row of globalRows) {
-      result[row.key] = row.is_secret ? this.resolveSecretValue(row.value) : row.value;
+      result[row.key] = row.is_secret
+        ? this.resolveSecretValue(row.value)
+        : row.value;
     }
 
     const automationRows = this.db.db
-      .query<EnvVarRow, [string, string]>(
-        "SELECT * FROM env_vars WHERE scope = ? AND scope_id = ?",
-      )
+      .query<
+        EnvVarRow,
+        [string, string]
+      >("SELECT * FROM env_vars WHERE scope = ? AND scope_id = ?")
       .all("automation", automationId);
     for (const row of automationRows) {
-      result[row.key] = row.is_secret ? this.resolveSecretValue(row.value) : row.value;
+      result[row.key] = row.is_secret
+        ? this.resolveSecretValue(row.value)
+        : row.value;
     }
 
     const machineRows = this.db.db
-      .query<EnvVarRow, [string, string]>(
-        "SELECT * FROM env_vars WHERE scope = ? AND scope_id = ?",
-      )
+      .query<
+        EnvVarRow,
+        [string, string]
+      >("SELECT * FROM env_vars WHERE scope = ? AND scope_id = ?")
       .all("machine", agentId);
     for (const row of machineRows) {
-      result[row.key] = row.is_secret ? this.resolveSecretValue(row.value) : row.value;
+      result[row.key] = row.is_secret
+        ? this.resolveSecretValue(row.value)
+        : row.value;
     }
 
     return result;
   }
 
   private resolveSecretValue(value: string): string {
-    if (!this.vault) return value;
-
+    value = openSecret(this.db.db, value);
+    let ref: { credentialId?: string; key?: string };
     try {
-      const ref = JSON.parse(value) as { credentialId?: string; key?: string };
-      if (ref.credentialId && ref.key) {
-        try {
-          const credential = this.vault.getCredential(ref.credentialId);
-          return credential.values[ref.key] ?? value;
-        } catch {
-          return value;
-        }
-      }
+      ref = JSON.parse(value);
     } catch {
-      // not JSON, return raw
+      return value;
     }
-
-    return value;
+    if (!ref || !ref.credentialId || !ref.key) return value;
+    if (!this.vault) throw new Error("Vault unavailable");
+    const credential = this.vault.getCredential(ref.credentialId);
+    if (!(ref.key in credential.values))
+      throw new Error("Credential field not found");
+    return credential.values[ref.key];
   }
 }

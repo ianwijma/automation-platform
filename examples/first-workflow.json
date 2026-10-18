@@ -1,0 +1,116 @@
+{
+  "formatVersion": 1,
+  "automation": {
+    "schemaVersion": 1,
+    "name": "First workflow",
+    "settings": {
+      "runTimeoutSec": 30,
+      "savePayloads": true,
+      "errorAutomationId": null
+    },
+    "nodes": [
+      {
+        "id": "start",
+        "name": "Start",
+        "type": "trigger.manual",
+        "typeVersion": 1,
+        "params": {
+          "testData": {
+            "count": 21
+          }
+        },
+        "target": {
+          "kind": "local"
+        },
+        "disabled": false,
+        "position": {
+          "x": 0,
+          "y": 100
+        }
+      },
+      {
+        "id": "calculate",
+        "name": "Calculate",
+        "type": "logic.set",
+        "typeVersion": 1,
+        "params": {
+          "assignments": [
+            {
+              "field": "answer",
+              "value": "{{ $json.count * 2 }}"
+            }
+          ]
+        },
+        "target": {
+          "kind": "local"
+        },
+        "disabled": false,
+        "position": {
+          "x": 240,
+          "y": 100
+        }
+      },
+      {
+        "id": "remember",
+        "name": "Remember",
+        "type": "state.set",
+        "typeVersion": 1,
+        "params": {
+          "key": "lastAnswer",
+          "valueExpression": "$json.answer"
+        },
+        "target": {
+          "kind": "local"
+        },
+        "disabled": false,
+        "position": {
+          "x": 480,
+          "y": 100
+        }
+      },
+      {
+        "id": "read",
+        "name": "Read",
+        "type": "state.get",
+        "typeVersion": 1,
+        "params": {
+          "key": "lastAnswer"
+        },
+        "target": {
+          "kind": "local"
+        },
+        "disabled": false,
+        "position": {
+          "x": 720,
+          "y": 100
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "0",
+        "source": "start",
+        "sourcePort": "out",
+        "target": "calculate",
+        "targetPort": "in"
+      },
+      {
+        "id": "1",
+        "source": "calculate",
+        "sourcePort": "out",
+        "target": "remember",
+        "targetPort": "in"
+      },
+      {
+        "id": "2",
+        "source": "remember",
+        "sourcePort": "out",
+        "target": "read",
+        "targetPort": "in"
+      }
+    ]
+  },
+  "credentials": [],
+  "envVars": [],
+  "agentMapping": {}
+}

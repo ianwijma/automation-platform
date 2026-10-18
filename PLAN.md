@@ -1,11 +1,24 @@
 # PLAN — AI-Enabled Linux Automation Platform
 
-> **Status:** Phase 1 final — APPROVED.
+> **Status (repair pass, 2026-10-17):** The implementation and evidence are tracked in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) and [TASKS.md](TASKS.md). The historical design below remains useful context; the repair amendments immediately below supersede conflicting details.
 > **Non-negotiable invariants:**
 > 1. **DX-first setup** — one install path, zero-config local use, single-flag fleet onboarding.
 > 2. **Unified execution model** — one binary; no local/remote special-casing in graph semantics. Any design that branches on "is local" in orchestration logic is a defect.
 
 ---
+
+## Repair amendments — current implementation contract
+
+- Preserve Bun/TypeScript, React Flow, SQLite and Tauri. Prioritize a usable local desktop and unattended data/system runtime before extension distribution.
+- Both local and remote dispatch use the same node context, cancellation, state and artifact contracts. Protocol v2 validates frames, exchanges a one-use enrollment token for a persistent identity, and preserves identity on reconnect.
+- User expressions and synchronous code use QuickJS memory/CPU isolation. Built-in OS actions run with the agent user's privileges and cancellable process groups. Plugins are disabled until a separately isolated runtime exists; agent self-update is disabled until verified update delivery exists.
+- GNOME/KDE Wayland uses RemoteDesktop/ScreenCast portals with explicit consent and optional compositor window adapters. This supersedes ydotool/grim assumptions. X11 uses xdotool/wmctrl and capture utilities. Wayland session acceptance is a release gate, not established support from a successful compile.
+- Desktop packaging stores a compressed runtime resource, extracted unchanged before launch. AppImage ELF rewriting must not touch the Bun executable. The standalone output is `dist/ap`.
+- Bind loopback by default. Network deployment requires administrator authentication and an HTTPS public origin behind a reverse proxy. This remains a single-administrator trusted-workflow product.
+- Default retries are one attempt. Disconnects during an action and interrupted runs after restart are never automatically replayed. A user must reconcile uncertain side effects before rerunning.
+- Artifacts currently use bounded whole-message transfer, with 32 MiB per artifact, 72-hour default expiry and payload spilling above 1 MiB. Chunked streaming, thumbnails and resumable transfers remain future work.
+- Prototype data is disposable for the repair. Preserve existing profiles; use a fresh `AP_DATA_DIR` and explicit export/rebinding. Historical plaintext key formats fail closed. No implicit data deletion or promise of a fully backward-compatible migration.
+- Completion requires observable end-to-end outcomes. Unit tests, browser/API tests, a real loopback fleet test, owned X11 test, portable binary test and container test are automated. Native compositor and interactive shell checks are recorded separately in [the desktop matrix](docs/DESKTOP-ACCEPTANCE.md).
 
 ## 1. Final Requirements (as amended)
 

@@ -125,9 +125,7 @@ CREATE TABLE IF NOT EXISTS _migrations (
 `;
 
 function createTestAppDb(): AppDatabase {
-  const db = new Database(":memory:");
-  db.exec(MIGRATION_SQL);
-  return new AppDatabase(db);
+  return createDatabase(":memory:");
 }
 
 let server: ReturnType<typeof createServer> | null = null;
@@ -154,11 +152,17 @@ describe("HTTP server", () => {
       dbPath: ":memory:",
     };
 
-    server = createServer({ port: 0, host: "127.0.0.1", db, config, uiDist: MOCK_UI_DIR });
+    server = createServer({
+      port: 0,
+      host: "127.0.0.1",
+      db,
+      config,
+      uiDist: MOCK_UI_DIR,
+    });
     baseUrl = `http://127.0.0.1:${server.server.port}`;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (server) {
       server.close();
       server = null;
@@ -187,40 +191,46 @@ describe("HTTP server", () => {
 
   test("path traversal protection — request for /../../../etc/passwd is safe", async () => {
     const { default: http } = await import("node:http");
-    const res = await new Promise<{ status: number; body: string }>((resolve, reject) => {
-      const req = http.get(
-        `http://127.0.0.1:${server!.server.port}/../../../etc/passwd`,
-        (res) => {
-          let body = "";
-          res.on("data", (chunk) => (body += chunk));
-          res.on("end", () => resolve({ status: res.statusCode ?? 200, body }));
-        },
-      );
-      req.on("error", reject);
-    });
+    const res = await new Promise<{ status: number; body: string }>(
+      (resolve, reject) => {
+        const req = http.get(
+          `http://127.0.0.1:${server!.server.port}/../../../etc/passwd`,
+          (res) => {
+            let body = "";
+            res.on("data", (chunk) => (body += chunk));
+            res.on("end", () =>
+              resolve({ status: res.statusCode ?? 200, body }),
+            );
+          },
+        );
+        req.on("error", reject);
+      },
+    );
     expect([200, 404]).toContain(res.status);
     if (res.status === 200) {
       expect(res.body).toContain("test");
     }
   });
 
-  test("CORS headers on API responses", async () => {
+  test("API responses omit CORS authorization", async () => {
     const res = await fetch(`${baseUrl}/api/settings`);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
-    expect(res.headers.get("access-control-allow-methods")).toBeDefined();
-    expect(res.headers.get("access-control-allow-headers")).toBeDefined();
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+    expect(res.headers.get("access-control-allow-methods")).toBeNull();
+    expect(res.headers.get("access-control-allow-headers")).toBeNull();
   });
 
   test("OPTIONS preflight returns 204", async () => {
-    const res = await fetch(`${baseUrl}/api/automations`, { method: "OPTIONS" });
+    const res = await fetch(`${baseUrl}/api/automations`, {
+      method: "OPTIONS",
+    });
     expect(res.status).toBe(204);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   test("/api/system/info returns version and uptime", async () => {
     const res = await fetch(`${baseUrl}/api/system/info`);
     expect(res.status).toBe(200);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.version).toBe("0.1.0");
     expect(typeof body.uptime).toBe("number");
     expect(body.uptime).toBeGreaterThanOrEqual(0);
@@ -230,13 +240,13 @@ describe("HTTP server", () => {
   test("unknown /api/ route returns 404", async () => {
     const res = await fetch(`${baseUrl}/api/does-not-exist`);
     expect(res.status).toBe(404);
-    const body = await res.json() as any;
+    const body = (await res.json()) as any;
     expect(body.error).toBeDefined();
   });
 
-  test("CORS headers on 404 responses", async () => {
+  test("404 responses omit CORS authorization", async () => {
     const res = await fetch(`${baseUrl}/api/nope`);
-    expect(res.headers.get("access-control-allow-origin")).toBe("*");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   test("non-GET non-API returns 404", async () => {

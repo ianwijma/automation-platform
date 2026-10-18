@@ -6,7 +6,7 @@ import type { ChildProcess } from "node:child_process";
 export interface TestServerResult {
   url: string;
   dataDir: string;
-  close: () => void;
+  close: () => Promise<void>;
 }
 
 const SERVER_SCRIPT = (projectDir: string) => `
@@ -30,15 +30,19 @@ const { server, close } = createServer({ port: 0, host: "127.0.0.1", db, config 
 
 const port = server.port;
 
-setAiSettings(db.db, { apiKey: "test-key", model: "openai/gpt-4o-mini", endpoint: null });
+const provider = process.env.AP_E2E_AI_REPLY ? Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: request => Response.json(request.url.endsWith("/models") ? { data: [{ id: "fixture" }] } : { choices: [{ message: { content: process.env.AP_E2E_AI_REPLY } }] }) }) : null;
+setAiSettings(db.db, { apiKey: "test-key", model: "fixture", endpoint: provider ? "http://127.0.0.1:" + provider.port + "/v1" : "http://127.0.0.1:1/v1" });
+
+process.on("SIGTERM", async () => { await close(); provider?.stop(true); process.exit(0); });
 
 process.stdout.write("AP_E2E_READY " + port + "\\n");
 
-process.on("SIGTERM", () => { close(); process.exit(0); });
-process.on("SIGINT", () => { close(); process.exit(0); });
+
 `;
 
-export async function startTestServer(): Promise<TestServerResult> {
+export async function startTestServer(
+  options: { adminToken?: string; aiReply?: string; display?: string } = {},
+): Promise<TestServerResult> {
   const dataDir = `/tmp/ap-e2e-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   mkdirSync(dataDir, { recursive: true });
 
@@ -50,7 +54,19 @@ export async function startTestServer(): Promise<TestServerResult> {
     cwd: process.cwd(),
     env: {
       ...process.env,
+      ...(options.display === undefined
+        ? {}
+        : {
+            DISPLAY: options.display,
+            WAYLAND_DISPLAY: "",
+            XDG_SESSION_TYPE: "x11",
+          }),
       AP_E2E_DATA_DIR: dataDir,
+      AP_ADMIN_TOKEN: options.adminToken ?? "",
+      AP_E2E_AI_REPLY: options.aiReply ?? "",
+      AP_HOST: "127.0.0.1",
+      AP_PUBLIC_URL: "",
+      AP_MASTER_KEY: "",
     },
   });
 
@@ -93,9 +109,17 @@ export async function startTestServer(): Promise<TestServerResult> {
   return {
     url,
     dataDir,
-    close: () => {
+    close: async () => {
+      const stopped = new Promise<void>((resolve) =>
+        proc.once("exit", () => resolve()),
+      );
       proc.kill("SIGTERM");
-      try { rmSync(dataDir, { recursive: true, force: true }); } catch {}
+      const timer = setTimeout(() => proc.kill("SIGKILL"), 7000);
+      await stopped;
+      clearTimeout(timer);
+      try {
+        rmSync(dataDir, { recursive: true, force: true });
+      } catch {}
     },
   };
 }

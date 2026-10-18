@@ -9,7 +9,11 @@ function makeDefinition() {
   return {
     schemaVersion: 1 as const,
     name: "Test Export",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
     nodes: [
       {
         id: "node-1",
@@ -30,15 +34,27 @@ function createTestAppDb(): AppDatabase {
   return createDatabase(":memory:");
 }
 
-function insertAutomationForExport(db: Database, id: string, def: ReturnType<typeof makeDefinition>) {
+function insertAutomationForExport(
+  db: Database,
+  id: string,
+  def: ReturnType<typeof makeDefinition>,
+) {
   const now = new Date().toISOString();
   const defJson = JSON.stringify(def);
   const versionId = "v-" + id;
   db.prepare(
-    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  ).run(id, def.name, versionId, defJson, JSON.stringify(def.settings), now, now);
+    "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    id,
+    def.name,
+    versionId,
+    defJson,
+    JSON.stringify(def.settings),
+    now,
+    now,
+  );
   db.prepare(
-    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
   ).run(versionId, id, 1, defJson, now);
 }
 
@@ -71,11 +87,11 @@ describe("exportAutomation", () => {
       nodes: [
         {
           id: "node-1",
-          type: "action.http",
+          type: "vision.llm",
           typeVersion: 1,
           name: "HTTP Request",
           target: { kind: "local" as const },
-          params: { url: "https://api.example.com" },
+          params: { prompt: "Describe image" },
           credentials: { type: "api_key", name: "my-api-key" },
           disabled: false,
           position: { x: 100, y: 100 },
@@ -111,9 +127,12 @@ describe("importAutomation", () => {
     expect(automationId).toBeDefined();
     expect(typeof automationId).toBe("string");
 
-    const row = appDb.db.query<{ name: string }, [string]>(
-      "SELECT name FROM automations WHERE id = ?"
-    ).get(automationId);
+    const row = appDb.db
+      .query<
+        { name: string },
+        [string]
+      >("SELECT name FROM automations WHERE id = ?")
+      .get(automationId);
     expect(row).not.toBeNull();
     expect(row!.name).toBe("Test Export");
   });
@@ -124,7 +143,7 @@ describe("importAutomation", () => {
       nodes: [
         {
           id: "node-1",
-          type: "action.shell",
+          type: "system.command",
           typeVersion: 1,
           name: "Shell",
           target: { kind: "machine", value: "old-agent" },
@@ -144,9 +163,12 @@ describe("importAutomation", () => {
       },
     });
 
-    const row = appDb.db.query<{ draft_json: string }, [string]>(
-      "SELECT draft_json FROM automations WHERE id = ?"
-    ).get(automationId);
+    const row = appDb.db
+      .query<
+        { draft_json: string },
+        [string]
+      >("SELECT draft_json FROM automations WHERE id = ?")
+      .get(automationId);
     const imported = JSON.parse(row!.draft_json);
     expect(imported.nodes[0].target.kind).toBe("local");
   });
@@ -155,7 +177,9 @@ describe("importAutomation", () => {
     const def = makeDefinition();
     importAutomation(appDb, vault, envResolver, {
       automation: def,
-      credentials: { "imported-key": { type: "api_key", value: "secret-value" } },
+      credentials: {
+        "imported-key": { type: "api_key", value: "secret-value" },
+      },
       envVars: {},
     });
 

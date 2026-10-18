@@ -10,10 +10,13 @@ import type {
   AiSettingsResponse,
 } from "../types";
 
-export async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+export async function fetchJson<T>(
+  url: string,
+  init?: RequestInit,
+): Promise<T> {
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
   });
   if (!res.ok) {
     const body = await res.text();
@@ -47,10 +50,11 @@ export function createAutomation(
 export function updateAutomation(
   id: string,
   definition: AutomationDefinition,
+  baseRevision?: string,
 ): Promise<AutomationResponse> {
   return fetchJson(`/api/automations/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ definition }),
+    body: JSON.stringify({ definition, baseRevision }),
   });
 }
 
@@ -68,7 +72,11 @@ export function deactivateAutomation(id: string): Promise<AutomationResponse> {
 
 export function runAutomation(
   id: string,
-  options: { mode?: string; dryRun?: boolean },
+  options: {
+    mode?: string;
+    dryRun?: boolean;
+    pinData?: Record<string, import("../types").NodeItem[]>;
+  },
 ): Promise<RunResponse> {
   return fetchJson(`/api/automations/${id}/run`, {
     method: "POST",
@@ -79,9 +87,9 @@ export function runAutomation(
 export function runNode(
   automationId: string,
   nodeId: string,
-  opts?: { fresh?: boolean; inputData?: any[] },
+  opts?: { fresh?: boolean; inputData?: any[]; dryRun?: boolean },
 ): Promise<RunResponse> {
-  const body: any = {};
+  const body: any = { dryRun: opts?.dryRun };
   if (opts?.fresh) body.fresh = true;
   if (opts?.inputData) body.inputData = opts.inputData;
   return fetchJson(`/api/automations/${automationId}/run-node/${nodeId}`, {
@@ -149,10 +157,15 @@ export function sendAiChat(
 export function applyAiDiffs(
   automationId: string,
   diffs: AiDiff[],
-): Promise<{ automationId: string; definition: AutomationDefinition }> {
+  baseRevision: string,
+): Promise<{
+  automationId: string;
+  definition: AutomationDefinition;
+  revision: string;
+}> {
   return fetchJson("/api/ai/apply", {
     method: "POST",
-    body: JSON.stringify({ automationId, diffs }),
+    body: JSON.stringify({ automationId, diffs, baseRevision }),
   });
 }
 

@@ -1,10 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { createDatabase } from "../db/database.js";
 import type { AppDatabase } from "../db/database.js";
-import {
-  createAutomation,
-  updateAutomation,
-} from "./automations.js";
+import { createAutomation, updateAutomation } from "./automations.js";
 import {
   listVersions,
   getVersion,
@@ -17,7 +14,11 @@ import "../nodes/index.js";
 const TEST_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,
   name: "Test",
-  settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+  settings: {
+    runTimeoutSec: 3600,
+    savePayloads: true,
+    errorAutomationId: null,
+  },
   nodes: [
     {
       id: "n1",
@@ -59,7 +60,7 @@ describe("Version management", () => {
           typeVersion: 1,
           name: "Delay",
           target: { kind: "local" },
-          params: { delaySec: 5 },
+          params: { seconds: 5 },
           disabled: false,
           position: { x: 200, y: 0 },
         },
@@ -97,7 +98,7 @@ describe("Version management", () => {
           typeVersion: 1,
           name: "Set",
           target: { kind: "local" },
-          params: { key: "value" },
+          params: { assignments: [{ field: "key", value: "value" }] },
           disabled: false,
           position: { x: 600, y: 0 },
         },
@@ -110,7 +111,10 @@ describe("Version management", () => {
   });
 
   test("list versions returns all in reverse order", () => {
-    const created = createAutomation(db.db, "Order Test", { ...TEST_DEFINITION, name: "Order Test" });
+    const created = createAutomation(db.db, "Order Test", {
+      ...TEST_DEFINITION,
+      name: "Order Test",
+    });
     updateAutomation(db.db, created.id, { ...TEST_DEFINITION, name: "V2" });
     updateAutomation(db.db, created.id, { ...TEST_DEFINITION, name: "V3" });
 
@@ -124,7 +128,10 @@ describe("Version management", () => {
   });
 
   test("get specific version", () => {
-    const created = createAutomation(db.db, "Get Version Test", { ...TEST_DEFINITION, name: "Get Version Test" });
+    const created = createAutomation(db.db, "Get Version Test", {
+      ...TEST_DEFINITION,
+      name: "Get Version Test",
+    });
     updateAutomation(db.db, created.id, { ...TEST_DEFINITION, name: "V2" });
 
     const v1 = getVersion(db.db, created.id, 1);
@@ -141,7 +148,10 @@ describe("Version management", () => {
   });
 
   test("revert creates new version with old definition", () => {
-    const created = createAutomation(db.db, "Revert Test", { ...TEST_DEFINITION, name: "Revert Test" });
+    const created = createAutomation(db.db, "Revert Test", {
+      ...TEST_DEFINITION,
+      name: "Revert Test",
+    });
     updateAutomation(db.db, created.id, { ...TEST_DEFINITION, name: "V2" });
     updateAutomation(db.db, created.id, { ...TEST_DEFINITION, name: "V3" });
 

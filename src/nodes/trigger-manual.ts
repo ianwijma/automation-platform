@@ -1,15 +1,21 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 
 interface ManualTriggerParams {
-  testData?: string;
+  testData?: unknown;
 }
 
-function parseTestData(raw: string | undefined): NodeItem[] {
-  if (!raw || raw.trim() === "") return [{ json: {} }];
+function parseTestData(raw: unknown): NodeItem[] {
+  if (!raw || raw === "") return [{ json: {} }];
   try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.map((item: any) => ({ json: item.json ?? item }));
+    const parsed = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (Array.isArray(parsed))
+      return parsed.map((item: any) => ({ json: item.json ?? item }));
     return [{ json: parsed }];
   } catch {
     return [{ json: { raw } }];
@@ -25,14 +31,19 @@ const definition: NodeDefinition<ManualTriggerParams> = {
   inputs: [],
   outputs: [{ name: "out", type: "item" }],
   paramsSchema: {
-    testData: { type: "object", description: "Test input data (JSON) for Execute Node" },
+    testData: {
+      type: "object",
+      description: "Test input data (JSON) for Execute Node",
+    },
   },
 
   async run(ctx: RunContext<ManualTriggerParams>): Promise<NodeItem[]> {
-    return parseTestData(ctx.params.testData as string | undefined);
+    return ctx.items.length ? ctx.items : parseTestData(ctx.params.testData);
   },
 
-  async simulate(ctx: RunContext<ManualTriggerParams>): Promise<SimulationReport> {
+  async simulate(
+    ctx: RunContext<ManualTriggerParams>,
+  ): Promise<SimulationReport> {
     return {
       description: "Manual trigger",
       wouldDo: "Start workflow manually",

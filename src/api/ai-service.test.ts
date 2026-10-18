@@ -1,12 +1,21 @@
 import { describe, test, expect } from "bun:test";
 import { AiService } from "./ai-service.js";
-import type { AutomationDefinition, AutomationNode, AutomationEdge, AutomationSettings } from "../core/types.js";
+import type {
+  AutomationDefinition,
+  AutomationNode,
+  AutomationEdge,
+  AutomationSettings,
+} from "../core/types.js";
 import type { AiDiff } from "../core/api-types.js";
 
 const BASE_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,
   name: "Test Automation",
-  settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+  settings: {
+    runTimeoutSec: 3600,
+    savePayloads: true,
+    errorAutomationId: null,
+  },
   nodes: [
     {
       id: "n1",
@@ -24,7 +33,7 @@ const BASE_DEFINITION: AutomationDefinition = {
       typeVersion: 1,
       name: "Wait",
       target: { kind: "local" },
-      params: { delaySec: 5 },
+      params: { seconds: 5 },
       disabled: false,
       position: { x: 200, y: 0 },
     },
@@ -45,7 +54,11 @@ describe("AiService", () => {
     const service = new AiService("test-key", "openai/gpt-4o-mini");
     expect(service).toBeDefined();
 
-    const serviceWithEndpoint = new AiService("test-key", "openai/gpt-4o", "https://custom.api/v1");
+    const serviceWithEndpoint = new AiService(
+      "test-key",
+      "openai/gpt-4o",
+      "https://custom.api/v1",
+    );
     expect(serviceWithEndpoint).toBeDefined();
   });
 
@@ -62,7 +75,12 @@ describe("AiService", () => {
     };
 
     const diffs: AiDiff[] = [
-      { op: "add-node", path: "nodes", value: newNode, description: "Add condition node" },
+      {
+        op: "add-node",
+        path: "nodes",
+        value: newNode,
+        description: "Add condition node",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -74,7 +92,12 @@ describe("AiService", () => {
 
   test("applyDiffs with remove-node", () => {
     const diffs: AiDiff[] = [
-      { op: "remove-node", path: "n2", value: null, description: "Remove delay node" },
+      {
+        op: "remove-node",
+        path: "n2",
+        value: null,
+        description: "Remove delay node",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -85,15 +108,19 @@ describe("AiService", () => {
 
   test("applyDiffs with update-node-params", () => {
     const diffs: AiDiff[] = [
-      { op: "update-node-params", path: "n2", value: { delaySec: 10, newParam: "hello" }, description: "Update delay" },
+      {
+        op: "update-node-params",
+        path: "n2",
+        value: { seconds: 10 },
+        description: "Update delay",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
     expect(result.nodes.length).toBe(2);
     const updatedNode = result.nodes.find((n) => n.id === "n2");
     expect(updatedNode).toBeDefined();
-    expect(updatedNode!.params.delaySec).toBe(10);
-    expect(updatedNode!.params.newParam).toBe("hello");
+    expect(updatedNode!.params.seconds).toBe(10);
     expect(result.edges).toEqual(BASE_DEFINITION.edges);
   });
 
@@ -117,8 +144,18 @@ describe("AiService", () => {
     };
 
     const diffs: AiDiff[] = [
-      { op: "add-node", path: "nodes", value: newNode, description: "Add node" },
-      { op: "add-edge", path: "edges", value: newEdge, description: "Add edge" },
+      {
+        op: "add-node",
+        path: "nodes",
+        value: newNode,
+        description: "Add node",
+      },
+      {
+        op: "add-edge",
+        path: "edges",
+        value: newEdge,
+        description: "Add edge",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -129,7 +166,12 @@ describe("AiService", () => {
 
   test("applyDiffs with remove-edge", () => {
     const diffs: AiDiff[] = [
-      { op: "remove-edge", path: "e1", value: null, description: "Remove edge" },
+      {
+        op: "remove-edge",
+        path: "e1",
+        value: null,
+        description: "Remove edge",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -139,7 +181,12 @@ describe("AiService", () => {
 
   test("applyDiffs with update-settings", () => {
     const diffs: AiDiff[] = [
-      { op: "update-settings", path: "settings", value: { runTimeoutSec: 7200 }, description: "Increase timeout" },
+      {
+        op: "update-settings",
+        path: "settings",
+        value: { runTimeoutSec: 7200 },
+        description: "Increase timeout",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -168,29 +215,51 @@ describe("AiService", () => {
     };
 
     const diffs: AiDiff[] = [
-      { op: "add-node", path: "nodes", value: newNode, description: "Add node" },
-      { op: "add-edge", path: "edges", value: newEdge, description: "Add edge" },
-      { op: "update-node-params", path: "n1", value: { customParam: "value" }, description: "Update params" },
-      { op: "update-settings", path: "settings", value: { runTimeoutSec: 600 }, description: "Change timeout" },
+      {
+        op: "add-node",
+        path: "nodes",
+        value: newNode,
+        description: "Add node",
+      },
+      {
+        op: "add-edge",
+        path: "edges",
+        value: newEdge,
+        description: "Add edge",
+      },
+      {
+        op: "update-node-params",
+        path: "n1",
+        value: { testData: { value: "value" } },
+        description: "Update params",
+      },
+      {
+        op: "update-settings",
+        path: "settings",
+        value: { runTimeoutSec: 600 },
+        description: "Change timeout",
+      },
     ];
 
     const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
     expect(result.nodes.length).toBe(3);
     expect(result.edges.length).toBe(2);
     const n1 = result.nodes.find((n) => n.id === "n1");
-    expect(n1!.params.customParam).toBe("value");
+    expect(n1!.params.testData).toEqual({ value: "value" });
     expect(result.settings.runTimeoutSec).toBe(600);
   });
 
-  test("applyDiffs with invalid node ID returns unchanged definition", () => {
+  test("applyDiffs with invalid node ID rejects atomically", () => {
     const diffs: AiDiff[] = [
-      { op: "update-node-params", path: "nonexistent", value: { foo: "bar" }, description: "Update bad node" },
+      {
+        op: "update-node-params",
+        path: "nonexistent",
+        value: { foo: "bar" },
+        description: "Update bad node",
+      },
     ];
 
-    const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
-    expect(result.nodes).toEqual(BASE_DEFINITION.nodes);
-    expect(result.edges).toEqual(BASE_DEFINITION.edges);
-    expect(result.settings).toEqual(BASE_DEFINITION.settings);
+    expect(() => AiService.applyDiffs(BASE_DEFINITION, diffs)).toThrow();
   });
 
   test("applyDiffs does not mutate input", () => {
@@ -207,7 +276,12 @@ describe("AiService", () => {
     };
 
     const diffs: AiDiff[] = [
-      { op: "add-node", path: "nodes", value: newNode, description: "Add node" },
+      {
+        op: "add-node",
+        path: "nodes",
+        value: newNode,
+        description: "Add node",
+      },
     ];
 
     AiService.applyDiffs(BASE_DEFINITION, diffs);
@@ -215,34 +289,46 @@ describe("AiService", () => {
     expect(BASE_DEFINITION).toEqual(original);
   });
 
-  test("applyDiffs with add-node missing id is skipped", () => {
+  test("applyDiffs with add-node missing id is rejected", () => {
     const badNode = { type: "logic.if", typeVersion: 1, name: "Bad" } as any;
 
     const diffs: AiDiff[] = [
-      { op: "add-node", path: "nodes", value: badNode, description: "Add bad node" },
+      {
+        op: "add-node",
+        path: "nodes",
+        value: badNode,
+        description: "Add bad node",
+      },
     ];
 
-    const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
-    expect(result.nodes.length).toBe(2);
+    expect(() => AiService.applyDiffs(BASE_DEFINITION, diffs)).toThrow();
   });
 
-  test("applyDiffs with add-edge missing fields is skipped", () => {
+  test("applyDiffs with add-edge missing fields is rejected", () => {
     const badEdge = { id: "e2", source: "n2" } as any;
 
     const diffs: AiDiff[] = [
-      { op: "add-edge", path: "edges", value: badEdge, description: "Add bad edge" },
+      {
+        op: "add-edge",
+        path: "edges",
+        value: badEdge,
+        description: "Add bad edge",
+      },
     ];
 
-    const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
-    expect(result.edges.length).toBe(1);
+    expect(() => AiService.applyDiffs(BASE_DEFINITION, diffs)).toThrow();
   });
 
-  test("applyDiffs with remove-edge nonexistent ID is skipped", () => {
+  test("applyDiffs with remove-edge nonexistent ID is rejected", () => {
     const diffs: AiDiff[] = [
-      { op: "remove-edge", path: "nonexistent", value: null, description: "Remove bad edge" },
+      {
+        op: "remove-edge",
+        path: "nonexistent",
+        value: null,
+        description: "Remove bad edge",
+      },
     ];
 
-    const result = AiService.applyDiffs(BASE_DEFINITION, diffs);
-    expect(result.edges.length).toBe(1);
+    expect(() => AiService.applyDiffs(BASE_DEFINITION, diffs)).toThrow();
   });
 });

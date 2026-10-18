@@ -1,8 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -33,7 +35,9 @@ impl Sidecar {
     }
 
     fn try_wait(&mut self) -> Option<std::process::ExitStatus> {
-        self.child.as_mut().and_then(|c| c.try_wait().ok().flatten())
+        self.child
+            .as_mut()
+            .and_then(|c| c.try_wait().ok().flatten())
     }
 
     fn force_kill(&mut self) {
@@ -48,35 +52,49 @@ impl Sidecar {
     }
 }
 
-fn find_sidecar_path() -> PathBuf {
-    let exe = std::env::current_exe().expect("failed to get current exe path");
-    let dir = exe.parent().expect("current exe has no parent dir");
-    let target = env!("TARGET");
-    dir.join(format!("ap-{target}"))
+fn prepare_sidecar(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let resource = app
+        .path()
+        .resolve("resources/ap.gz", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| e.to_string())?;
+    let compressed = fs::read(&resource)
+        .map_err(|e| format!("Cannot read bundled runtime {}: {e}", resource.display()))?;
+    let digest = format!("{:x}", Sha256::digest(&compressed));
+    let directory = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("runtime")
+        .join(digest);
+    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))
+        .map_err(|e| e.to_string())?;
+    let executable = directory.join("ap");
+    if !executable.is_file() {
+        let temporary = directory.join(format!("ap-{}.tmp", std::process::id()));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|e| e.to_string())?;
+        fs::set_permissions(&temporary, fs::Permissions::from_mode(0o700))
+            .map_err(|e| e.to_string())?;
+        let mut decoder = flate2::read::GzDecoder::new(compressed.as_slice());
+        std::io::copy(&mut decoder, &mut file).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        fs::rename(&temporary, &executable).map_err(|e| e.to_string())?;
+    }
+    Ok(executable)
 }
 
-fn spawn_sidecar() -> Result<(Sidecar, BufReader<std::process::ChildStdout>), String> {
-    let sidecar_path = find_sidecar_path();
-
-    let path_to_use = if sidecar_path.exists() {
-        sidecar_path
-    } else {
-        let dev_path = std::env::current_dir()
-            .unwrap_or_default()
-            .join("bin")
-            .join("ap");
-        if !dev_path.exists() {
-            return Err(format!(
-                "sidecar binary not found at {} or {}",
-                sidecar_path.display(),
-                dev_path.display()
-            ));
-        }
-        dev_path
-    };
+fn spawn_sidecar(
+    app: &tauri::AppHandle,
+) -> Result<(Sidecar, BufReader<std::process::ChildStdout>), String> {
+    let path_to_use = prepare_sidecar(app)?;
 
     let mut child = Command::new(&path_to_use)
         .args(["serve", "--port", "0", "--no-browser"])
+        .env("AP_HOST", "127.0.0.1")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -139,6 +157,17 @@ fn set_autostart(enabled: bool) {
         if let Some(parent) = path.parent() {
             let _ = fs::create_dir_all(parent);
         }
+        let executable = env::var("APPIMAGE")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| env::current_exe().unwrap());
+        let escaped = executable
+            .to_string_lossy()
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("%", "%%")
+            .replace("`", "\\`")
+            .replace("$", "\\$");
         let desktop_entry = concat!(
             "[Desktop Entry]\n",
             "Type=Application\n",
@@ -147,7 +176,10 @@ fn set_autostart(enabled: bool) {
             "X-GNOME-Autostart-enabled=true\n",
             "Hidden=false\n"
         );
-        let _ = fs::write(&path, desktop_entry);
+        let _ = fs::write(
+            &path,
+            desktop_entry.replace("Exec=automation-platform", &format!("Exec=\"{escaped}\"")),
+        );
     } else {
         let _ = fs::remove_file(&path);
     }
@@ -195,15 +227,15 @@ fn main() {
                 "autostart",
                 "Start on Login",
                 true,
-                None::<&str>,
                 is_autostart_enabled(),
+                None::<&str>,
             )?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open_item, &autostart_item, &quit_item])?;
 
             let red_icon_bytes = include_bytes!("../icons/tray-red.png").to_vec();
-            let red_icon = tauri::image::Image::from_bytes(&red_icon_bytes)
-                .expect("failed to load tray icon");
+            let red_icon =
+                tauri::image::Image::from_bytes(&red_icon_bytes).expect("failed to load tray icon");
 
             let sidecar_for_tray_quit = Arc::clone(&sidecar);
 
@@ -224,15 +256,7 @@ fn main() {
                         let current = is_autostart_enabled();
                         let new_state = !current;
                         set_autostart(new_state);
-                        if let Some(tray) = app_handle.tray_by_id("main-tray") {
-                            if let Some(menu) = tray.menu() {
-                                if let Some(item) = menu.get("autostart") {
-                                    if let Some(check) = item.as_check_menuitem() {
-                                        let _ = check.set_checked(new_state);
-                                    }
-                                }
-                            }
-                        }
+                        let _ = autostart_item.set_checked(new_state);
                     }
                     "quit" => {
                         if IS_QUITTING.swap(true, Ordering::SeqCst) {
@@ -275,12 +299,12 @@ fn main() {
                         return;
                     }
                     api.prevent_close();
-                    window_for_close.hide();
+                    let _ = window_for_close.hide();
                 }
             });
 
-            match spawn_sidecar() {
-                Ok((mut sidecar_instance, stdout_reader)) => {
+            match spawn_sidecar(&app_handle) {
+                Ok((sidecar_instance, stdout_reader)) => {
                     let pid = sidecar_instance.pid();
                     eprintln!("[desktop] sidecar spawned, pid={pid:?}");
 
@@ -290,8 +314,7 @@ fn main() {
                     }
 
                     let app_h = app_handle.clone();
-                    let url_for_rx: Arc<Mutex<Option<String>>> =
-                        Arc::new(Mutex::new(None));
+                    let url_for_rx: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
 
                     std::thread::spawn(move || {
                         for line in stdout_reader.lines().flatten() {
@@ -306,8 +329,8 @@ fn main() {
                                 let app_ref = app_h.clone();
                                 if let Some(window) = app_ref.get_webview_window("main") {
                                     let _ = window.eval(&format!(
-                                        "window.location.href = '{}'",
-                                        url_clone
+                                        "window.location.href = {}",
+                                        serde_json::to_string(&url_clone).unwrap()
                                     ));
                                 }
                                 update_tray_icon(&app_h, true);
@@ -319,6 +342,10 @@ fn main() {
                 }
                 Err(e) => {
                     eprintln!("[desktop] failed to spawn sidecar: {e}");
+                    let _ = main_window.eval(&format!(
+                        "document.querySelector('.status').textContent = {}",
+                        serde_json::to_string(&e).unwrap()
+                    ));
                 }
             }
 

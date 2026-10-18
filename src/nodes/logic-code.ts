@@ -1,4 +1,11 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { evaluateSandbox } from "../core/sandbox.js";
+import { itemSchema } from "../core/schemas.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 
 interface CodeParams {
@@ -11,11 +18,15 @@ const definition: NodeDefinition<CodeParams> = {
   version: 1,
   displayName: "Code",
   category: "logic",
-  sideEffecting: true,
+  sideEffecting: false,
   inputs: [{ name: "in", type: "item" }],
   outputs: [{ name: "out", type: "item" }],
   paramsSchema: {
-    language: { type: "string", default: "javascript", description: "Code language" },
+    language: {
+      type: "string",
+      default: "javascript",
+      description: "Code language",
+    },
     code: { type: "string", description: "Code to execute" },
   },
 
@@ -26,29 +37,37 @@ const definition: NodeDefinition<CodeParams> = {
       return ctx.items;
     }
 
-    const ctxObj = {
-      items: ctx.items,
-      $json: ctx.items[0]?.json ?? {},
-      $env: ctx.env,
-      $state: {
-        get: ctx.state.get.bind(ctx.state),
-        set: ctx.state.set.bind(ctx.state),
+    const source =
+      ctx.params.language === "typescript"
+        ? new Bun.Transpiler({ loader: "ts" }).transformSync(
+            `function execute(ctx: any) { ${code} }`,
+          )
+        : `function execute(ctx) { ${code} }`;
+    const result = evaluateSandbox(
+      `const writes={}; ctx.$state={get:key=>ctx.state[key],set:(key,value)=>{writes[key]=value;ctx.state[key]=value;}}; ${source}; const items=execute(ctx); ({items,writes});`,
+      {
+        state: ctx.stateSnapshot ?? {},
+        items: ctx.items,
+        $json: ctx.items[0]?.json ?? {},
+        $env: ctx.env,
       },
-    };
-
-    const fn = new Function("ctx", code);
-    const result = fn(ctxObj);
-
-    if (!Array.isArray(result)) {
-      throw new Error("Code must return an array of items");
-    }
-
-    return result.map((item: unknown) => {
-      if (item && typeof item === "object" && "json" in (item as Record<string, unknown>)) {
-        return item as NodeItem;
-      }
-      return { json: item as Record<string, unknown> };
-    });
+      1000,
+      ctx.signal,
+    ) as { items: unknown; writes: Record<string, unknown> };
+    if (!Array.isArray(result.items))
+      throw new Error(
+        "Code must return an array of items (async code is not supported)",
+      );
+    const items = result.items.map((item) =>
+      itemSchema.parse(
+        item && typeof item === "object" && "json" in item
+          ? item
+          : { json: item },
+      ),
+    );
+    for (const [key, value] of Object.entries(result.writes))
+      ctx.state.set(key, value);
+    return items;
   },
 
   async simulate(_ctx: RunContext<CodeParams>): Promise<SimulationReport> {

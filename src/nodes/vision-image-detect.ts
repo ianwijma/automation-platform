@@ -1,6 +1,12 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { withImage } from "../core/image-input.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
-import { safeSpawn, spawnAndCapture } from "../core/safe-spawn.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface ImageDetectParams {
   template: string;
@@ -14,55 +20,77 @@ const definition: NodeDefinition<ImageDetectParams> = {
   displayName: "Image Detect",
   category: "vision",
   sideEffecting: false,
-  requiredCapabilities: { screen: true },
+  requiredCapabilities: { tools: ["compare"] },
   inputs: [{ name: "in", type: "item" }],
   outputs: [{ name: "out", type: "item" }],
   paramsSchema: {
     template: { type: "string", description: "Path to template image" },
-    confidence: { type: "number", default: 0.8, description: "Minimum confidence threshold (0-1)" },
-    method: { type: "string", default: "template-matching", description: "Detection method" },
+    confidence: {
+      type: "number",
+      default: 0.8,
+      description: "Minimum confidence threshold (0-1)",
+    },
+    method: {
+      type: "string",
+      default: "template-matching",
+      description: "Detection method",
+    },
   },
 
   async run(ctx: RunContext<ImageDetectParams>): Promise<NodeItem[]> {
-    const { template } = ctx.params;
     const confidence = ctx.params.confidence ?? 0.8;
-    const screenshotItem = ctx.items.find((item) => item.json?.filename);
-    const screenshotPath = (screenshotItem?.json?.filename as string) ?? "/tmp/ap_screenshot.png";
-
-    let compareAvailable = false;
-    try {
-      const checkProc = await safeSpawn({ cmd: ["which", "compare"] });
-      compareAvailable = (await checkProc.exited) === 0;
-    } catch {}
-
-    if (!compareAvailable) {
-      throw new Error("ImageMagick 'compare' command not found. Install imagemagick: apt install imagemagick");
-    }
-
-    const { stderr: compareStderr } = await spawnAndCapture({
-      cmd: ["compare", "-metric", "RMSE", screenshotPath, template, "null:"],
-    });
-
-    const rmseMatch = compareStderr.match(/([\d.]+)/);
-    const rmseValue = rmseMatch ? parseFloat(rmseMatch[1]) : 1;
-
-    const normalizedError = Math.min(rmseValue, 1);
-    const matchConfidence = 1 - normalizedError;
-
-    const found = matchConfidence >= confidence;
-
-    return [
-      {
-        json: {
-          found,
-          confidence: matchConfidence,
-          location: null,
-        },
-      },
-    ];
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1)
+      throw new Error("Confidence must be between 0 and 1");
+    if (ctx.params.method && ctx.params.method !== "template-matching")
+      throw new Error("Only template-matching is supported");
+    return withImage(ctx, undefined, (screenshot) =>
+      withImage(ctx, ctx.params.template, async (template) => {
+        const result = await spawnAndCapture({
+          cmd: [
+            "compare",
+            "-limit",
+            "thread",
+            "2",
+            "-limit",
+            "memory",
+            "128MiB",
+            "-limit",
+            "map",
+            "256MiB",
+            "-metric",
+            "NCC",
+            "-subimage-search",
+            screenshot,
+            template,
+            "null:",
+          ],
+        });
+        if (result.exitCode > 1)
+          throw new Error(`Image comparison failed: ${result.stderr}`);
+        const match = result.stderr.match(
+          /([-+\d.eE]+)(?:\s+\([^)]+\))?\s+@\s+(-?\d+),(-?\d+)/,
+        );
+        if (!match)
+          throw new Error(
+            `ImageMagick did not return a match location: ${result.stderr}`,
+          );
+        const score = Number(match[1]);
+        return [
+          {
+            json: {
+              found: score >= confidence,
+              confidence: score,
+              location: { x: Number(match[2]), y: Number(match[3]) },
+            },
+          },
+        ];
+      }),
+    );
   },
 
-  async simulate(ctx: RunContext<ImageDetectParams>): Promise<SimulationReport> {
+  async simulate(
+    ctx: RunContext<ImageDetectParams>,
+  ): Promise<SimulationReport> {
     return {
       description: "Image Detect",
       wouldDo: `would detect image at confidence ${ctx.params.confidence}`,

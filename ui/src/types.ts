@@ -1,141 +1,46 @@
 import type { Node } from "@xyflow/react";
 
-export interface AutomationTarget {
-  kind: "local" | "machine" | "tag" | "any";
-  value?: string;
-}
+import type { AutomationTarget, ActionTarget } from "../../src/core/types";
+export type {
+  AutomationTarget,
+  ActionTarget,
+  AutomationDefinition,
+  AutomationSettings,
+} from "../../src/core/types";
+export type {
+  AutomationNode as ApiAutomationNode,
+  AutomationEdge as ApiAutomationEdge,
+} from "../../src/core/types";
+export { ACTION_TARGET_LABELS } from "../../src/core/types";
 
-export interface ActionTarget {
-  kind: "screen" | "window" | "region" | "file" | "none";
-  display?: string;
-  monitor?: number;
-  windowId?: string;
-  windowTitle?: string;
-  appId?: string;
-  pid?: number;
-  region?: { x: number; y: number; width: number; height: number };
-}
-
-export const ACTION_TARGET_LABELS: Record<ActionTarget["kind"], string> = {
-  screen: "Screen",
-  window: "Window",
-  region: "Region",
-  file: "File",
-  none: "\u2014",
-};
-
-export interface ApiAutomationNode {
-  id: string;
-  type: string;
-  typeVersion: number;
-  name: string;
-  target: AutomationTarget;
-  actionTarget?: ActionTarget;
-  params: Record<string, unknown>;
-  credentials?: { type: string; name: string } | null;
-  retry?: { attempts: number; backoffSec: number[] };
-  timeoutSec?: number;
-  disabled: boolean;
-  position: { x: number; y: number };
-}
-
-export interface ApiAutomationEdge {
-  id: string;
-  source: string;
-  sourcePort: string;
-  target: string;
-  targetPort: string;
-}
-
-export interface AutomationSettings {
-  runTimeoutSec: number;
-  savePayloads: boolean;
-  errorAutomationId: string | null;
-}
-
-export interface AutomationDefinition {
-  schemaVersion: 1;
-  name: string;
-  settings: AutomationSettings;
-  nodes: ApiAutomationNode[];
-  edges: ApiAutomationEdge[];
-}
-
-export interface SystemInfoResponse {
-  version: string;
-  mode: "standalone" | "platform" | "agent";
-  uptime: number;
-}
-
-export interface AutomationResponse {
-  id: string;
-  name: string;
-  activeVersionId: string | null;
-  settings: AutomationSettings;
-  draft: AutomationDefinition | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface RunResponse {
-  id: string;
-  automationId: string;
-  versionId: string;
-  mode: "manual" | "trigger" | "dry" | "partial";
-  status: "queued" | "running" | "success" | "error" | "interrupted" | "cancelled";
-  trigger: Record<string, unknown> | null;
-  startedAt: string;
-  finishedAt: string | null;
-  error: string | null;
+import type {
+  RunResponse as CoreRunResponse,
+  NodeExecutionResponse,
+} from "../../src/core/api-types";
+export type {
+  SystemInfoResponse,
+  AutomationResponse,
+  NodeExecutionResponse,
+  AgentResponse,
+  AutomationVersionResponse,
+  AiDiff,
+  AiSettingsResponse,
+} from "../../src/core/api-types";
+export type {
+  NodeItem,
+  ArtifactRef,
+  PortSchema,
+} from "../../src/core/node-contract";
+import type { PortSchema } from "../../src/core/node-contract";
+export interface RunResponse extends CoreRunResponse {
   nodeExecutions?: NodeExecutionResponse[];
 }
 
-export interface NodeItem {
-  json: Record<string, unknown>;
-  binary?: Record<string, ArtifactRef>;
-}
-
-export interface ArtifactRef {
-  $artifact: string;
-  mime: string;
-  size: number;
-  name: string;
-}
-
-export interface NodeExecutionResponse {
-  id: string;
-  runId: string;
-  nodeId: string;
-  agentId: string;
-  status: "success" | "error" | "timeout" | "cancelled" | "interrupted";
-  attempt: number;
-  simulated: boolean;
-  input: NodeItem[] | null;
-  output: NodeItem[] | null;
-  pinned: boolean;
-  startedAt: string;
-  durationMs: number;
-  error: string | null;
-}
-
-export interface PortSchema {
-  name: string;
-  type: "item" | "artifact";
-}
-
-export interface AgentResponse {
-  id: string;
-  name: string;
-  isLocal: boolean;
-  tags: string[];
-  capabilities: Record<string, unknown>;
-  version: string;
-  status: "online" | "offline";
-  lastSeenAt: string | null;
-  enrolledAt: string;
-}
-
 export interface PaletteNodeType {
+  paramsSchema: Record<
+    string,
+    { type?: string; description?: string; default?: unknown }
+  >;
   type: string;
   displayName: string;
   category: string;
@@ -189,33 +94,7 @@ export const CATEGORY_TEXT: Record<string, string> = {
   input: "text-teal-400",
 };
 
-export interface AutomationVersionResponse {
-  id: string;
-  automationId: string;
-  versionNo: number;
-  definition: AutomationDefinition;
-  label: string | null;
-  createdAt: string;
-}
-
-export interface AiDiff {
-  op: "add-node" | "remove-node" | "update-node-params" | "add-edge" | "remove-edge" | "update-settings";
-  path: string;
-  value: unknown;
-  description: string;
-}
-
-export interface AiChatResponse {
-  message: string;
-  diffs?: AiDiff[];
-}
-
-export interface AiSettingsResponse {
-  aiApiKey: string | null;
-  aiModel: string;
-  aiEndpoint: string | null;
-  hasApiKey: boolean;
-}
+export type { AiChatResponse } from "../../src/core/api-types";
 
 export const CATEGORY_BORDER: Record<string, string> = {
   trigger: "border-blue-500/60",

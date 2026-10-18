@@ -1,3 +1,5 @@
+import { listAiModels } from "../hooks/useApi";
+import { WorkspaceSettings } from "./WorkspaceSettings";
 import { useState, useEffect } from "react";
 import { useAppStore } from "../store";
 import { X, Save, Eye, EyeOff } from "lucide-react";
@@ -13,6 +15,8 @@ export function SettingsPanel() {
   const [endpoint, setEndpoint] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [modelError, setModelError] = useState("");
 
   useEffect(() => {
     fetchAiSettings();
@@ -28,12 +32,17 @@ export function SettingsPanel() {
 
   const handleSave = async () => {
     setSaving(true);
-    const updates: { aiApiKey?: string; aiModel?: string; aiEndpoint?: string } = {};
+    const updates: {
+      aiApiKey?: string;
+      aiModel?: string;
+      aiEndpoint?: string;
+    } = {};
     if (apiKey) updates.aiApiKey = apiKey;
     if (model) updates.aiModel = model;
-    if (endpoint) updates.aiEndpoint = endpoint;
+    updates.aiEndpoint = endpoint.trim();
+    useAppStore.setState({ actionError: null });
     await updateAiSettings(updates);
-    setApiKey("");
+    if (!useAppStore.getState().actionError) setApiKey("");
     setSaving(false);
   };
 
@@ -42,6 +51,7 @@ export function SettingsPanel() {
       <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2">
         <span className="text-xs font-semibold text-gray-200">Settings</span>
         <button
+          aria-label="Close settings"
           onClick={toggleSettings}
           className="rounded px-1.5 py-0.5 text-[11px] text-gray-500 hover:text-gray-300"
         >
@@ -50,6 +60,7 @@ export function SettingsPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-3">
+        <WorkspaceSettings />
         <div className="mb-4">
           <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-widest text-gray-500">
             AI Provider
@@ -57,29 +68,41 @@ export function SettingsPanel() {
 
           <div className="flex flex-col gap-3">
             <div>
-              <label className="mb-1 block text-[11px] text-gray-400">API Key</label>
+              <label className="mb-1 block text-[11px] text-gray-400">
+                API Key
+              </label>
               <div className="relative">
                 <input
                   type={showKey ? "text" : "password"}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={aiSettings?.hasApiKey ? "••••••••" : "Enter API key"}
+                  placeholder={
+                    aiSettings?.hasApiKey ? "••••••••" : "Enter API key"
+                  }
                   className="w-full rounded border border-gray-700 bg-gray-900 pr-8 px-2 py-1.5 text-xs text-gray-200 outline-none focus:border-indigo-500"
                 />
                 <button
                   type="button"
+                  aria-label={showKey ? "Hide API key" : "Show API key"}
                   onClick={() => setShowKey(!showKey)}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
                 >
-                  {showKey ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                  {showKey ? (
+                    <EyeOff className="h-3 w-3" />
+                  ) : (
+                    <Eye className="h-3 w-3" />
+                  )}
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="mb-1 block text-[11px] text-gray-400">Model</label>
+              <label className="mb-1 block text-[11px] text-gray-400">
+                Model
+              </label>
               <input
                 type="text"
+                list="ai-provider-models"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="e.g. gpt-4o"
@@ -87,8 +110,38 @@ export function SettingsPanel() {
               />
             </div>
 
+            <datalist id="ai-provider-models">
+              {models.map((id) => (
+                <option key={id} value={id} />
+              ))}
+            </datalist>
+            <button
+              className="text-left text-xs text-indigo-400"
+              disabled={saving}
+              onClick={async () => {
+                setModelError("");
+                setSaving(true);
+                try {
+                  setModels((await listAiModels()).models);
+                } catch (error) {
+                  setModelError((error as Error).message);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+            >
+              Load models from saved provider
+            </button>
+            {modelError && (
+              <p role="alert" className="text-xs text-red-400">
+                {modelError}
+              </p>
+            )}
+
             <div>
-              <label className="mb-1 block text-[11px] text-gray-400">Endpoint</label>
+              <label className="mb-1 block text-[11px] text-gray-400">
+                Endpoint
+              </label>
               <input
                 type="text"
                 value={endpoint}

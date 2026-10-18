@@ -1,4 +1,10 @@
-import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import {
+  mkdirSync,
+  writeFileSync,
+  chmodSync,
+  readFileSync,
+  existsSync,
+} from "node:fs";
 import { join } from "node:path";
 import { createDatabase } from "../db/database.js";
 import { createServer } from "../api/server.js";
@@ -10,10 +16,13 @@ import { probeCapabilities } from "../agent/capability-probe.js";
 import { loadPlugins } from "../core/plugin-loader.js";
 
 function ensureDataDir(dataDir: string): void {
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 }
 
-async function startServer(config: AppConfig, pluginsDir?: string): Promise<void> {
+async function startServer(
+  config: AppConfig,
+  pluginsDir?: string,
+): Promise<void> {
   ensureDataDir(config.dataDir);
   const db = createDatabase(config.dbPath);
 
@@ -37,9 +46,7 @@ async function startServer(config: AppConfig, pluginsDir?: string): Promise<void
     openBrowser(url);
   }
 
-  console.log(
-    `AP_READY http://127.0.0.1:${server.port}`,
-  );
+  console.log(`AP_READY http://127.0.0.1:${server.port}`);
 }
 
 function handleJoin(args: string[], flags: { token?: string }): void {
@@ -61,7 +68,10 @@ function handleJoin(args: string[], flags: { token?: string }): void {
     enrolledAt: new Date().toISOString(),
   };
 
-  writeFileSync(agentConfigPath, JSON.stringify(agentConfig, null, 2), "utf-8");
+  writeFileSync(agentConfigPath, JSON.stringify(agentConfig, null, 2), {
+    mode: 0o600,
+  });
+  chmodSync(agentConfigPath, 0o600);
   console.log("Agent enrolled");
 }
 
@@ -99,61 +109,65 @@ async function handleDoctor(): Promise<void> {
 
   console.log("System:");
   check(`OS: ${caps.os} (${caps.arch})`, true);
-  check(`Display server: ${caps.display}`, caps.display !== "none",
-    caps.display === "none" ? "No display server detected. Vision/input nodes will not work." : undefined);
+  check(
+    `Display server: ${caps.display}`,
+    caps.display !== "none",
+    caps.display === "none"
+      ? "No display server detected. Vision/input nodes will not work."
+      : undefined,
+  );
 
   console.log("\nScreen capture:");
-  const screenshotTools = ["maim", "scrot", "grim", "import"];
-  const hasScreenshot = screenshotTools.some((t) => caps.tools.includes(t));
-  check("Screenshot capability", hasScreenshot,
-    `Install one of: ${screenshotTools.join(", ")}`);
-  for (const tool of screenshotTools) {
-    if (caps.display === "wayland" && tool === "maim") continue;
-    if (caps.display === "wayland" && tool === "scrot") continue;
-    if (caps.display === "wayland" && tool === "import") continue;
-    if (caps.display === "x11" && tool === "grim") continue;
-    check(`  ${tool}`, caps.tools.includes(tool),
-      caps.display === "wayland" ? "Not available on Wayland" : `apt install ${tool} / pacman -S ${tool}`);
-  }
-
-  console.log("\nInput control:");
-  check(`Input method: ${caps.input}`, caps.input !== "none",
-    caps.input === "none"
-      ? caps.display === "wayland"
-        ? "Install ydotool: https://github.com/ReimuNotMoe/ydotool"
-        : "Install xdotool for X11 input control"
-      : undefined);
-
-  console.log("\nOCR:");
-  check("tesseract", caps.tools.includes("tesseract"),
-    "apt install tesseract-ocr / pacman -S tesseract");
-
-  console.log("\nWindow management:");
-  const wmTools = ["wmctrl", "xwininfo", "hyprctl", "swaymsg"];
-  for (const tool of wmTools) {
-    const relevant =
-      (caps.display === "x11" && (tool === "wmctrl" || tool === "xwininfo")) ||
-      (caps.display === "wayland" && (tool === "hyprctl" || tool === "swaymsg"));
-    if (relevant) {
-      check(`  ${tool}`, caps.tools.includes(tool));
-    }
-  }
-
-  console.log("\nOther tools:");
-  const otherTools = caps.tools.filter(
-    (t) => !screenshotTools.includes(t) && t !== "tesseract" && !wmTools.includes(t) && t !== "xdotool" && t !== "ydotool",
+  const hasScreenshot = caps.screen;
+  check(
+    "Screenshot capability",
+    hasScreenshot,
+    caps.display === "wayland"
+      ? "Install the desktop portal backend, GStreamer (PipeWire plugin), and ImageMagick. Allow screen sharing when prompted."
+      : "Install maim (or scrot/ImageMagick), xdotool, and wmctrl in an X11 desktop session.",
   );
-  for (const tool of otherTools) {
-    check(`  ${tool}`, true);
-  }
-
-  console.log("\nGPU:", caps.gpu === true ? "detected" : caps.gpu === false ? "none" : "unknown");
+  console.log("\nInput control:");
+  check(
+    `Input method: ${caps.input}`,
+    caps.input !== "none",
+    caps.display === "wayland"
+      ? "Enable a GNOME/KDE RemoteDesktop portal backend. The session must grant input permission."
+      : "Install xdotool for X11 input control.",
+  );
+  console.log("\nOCR:");
+  check("Offline English OCR (bundled WASM fallback)", true);
+  check(
+    "System tesseract (optional faster engine)",
+    caps.tools.includes("tesseract"),
+    "apt install tesseract-ocr",
+  );
+  console.log("\nWindow management:");
+  if (caps.display === "x11")
+    check(
+      "wmctrl + xdotool",
+      caps.tools.includes("wmctrl") && caps.tools.includes("xdotool"),
+      "apt install wmctrl xdotool",
+    );
+  if (caps.display === "wayland")
+    console.log(
+      "  Title/PID targeting requires the GNOME extension or KDE script in desktop/adapters. Other compositors are unsupported.",
+    );
+  console.log("\nImage matching:");
+  check(
+    "ImageMagick compare",
+    caps.tools.includes("compare"),
+    "apt install imagemagick",
+  );
+  console.log(
+    "\nGPU:",
+    caps.gpu === true ? "detected" : caps.gpu === false ? "none" : "unknown",
+  );
 
   const issues = [];
   if (caps.display === "none") issues.push("No display server");
   if (!hasScreenshot) issues.push("No screenshot tool");
-  if (caps.input === "none" && caps.display !== "none") issues.push("No input control tool");
-  if (!caps.tools.includes("tesseract")) issues.push("No OCR (tesseract)");
+  if (caps.input === "none" && caps.display !== "none")
+    issues.push("No input control tool");
 
   if (issues.length === 0) {
     console.log("\n\x1b[32mAll checks passed!\x1b[0m");
@@ -191,7 +205,12 @@ WantedBy=default.target
 `;
 
   const unitName = "ap.service";
-  const systemdDir = join(process.env.HOME ?? "/root", ".config", "systemd", "user");
+  const systemdDir = join(
+    process.env.HOME ?? "/root",
+    ".config",
+    "systemd",
+    "user",
+  );
   mkdirSync(systemdDir, { recursive: true });
   const unitPath = join(systemdDir, unitName);
   writeFileSync(unitPath, unit, "utf-8");

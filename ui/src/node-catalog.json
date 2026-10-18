@@ -1,0 +1,832 @@
+[
+  {
+    "type": "trigger.manual",
+    "version": 1,
+    "displayName": "Manual Trigger",
+    "category": "triggers",
+    "sideEffecting": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "testData": {
+        "type": "object",
+        "description": "Test input data (JSON) for Execute Node"
+      }
+    }
+  },
+  {
+    "type": "trigger.schedule",
+    "version": 1,
+    "displayName": "Schedule Trigger",
+    "category": "triggers",
+    "sideEffecting": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "cron": {
+        "type": "string",
+        "description": "Cron expression"
+      },
+      "timezone": {
+        "type": "string",
+        "default": "UTC"
+      }
+    }
+  },
+  {
+    "type": "trigger.webhook",
+    "version": 1,
+    "displayName": "Webhook Trigger",
+    "category": "triggers",
+    "sideEffecting": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "path": {
+        "type": "string",
+        "description": "Webhook URL path suffix"
+      },
+      "method": {
+        "type": "string",
+        "default": "POST"
+      }
+    }
+  },
+  {
+    "type": "trigger.polling",
+    "version": 1,
+    "displayName": "Polling Trigger",
+    "category": "triggers",
+    "sideEffecting": true,
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "intervalSec": {
+        "type": "number",
+        "default": 60
+      },
+      "targetType": {
+        "type": "string",
+        "description": "What to poll: url or command"
+      },
+      "target": {
+        "type": "string",
+        "description": "URL or command to poll"
+      },
+      "stopAfter": {
+        "type": "number",
+        "description": "Stop after N polls"
+      }
+    }
+  },
+  {
+    "type": "system.command",
+    "version": 1,
+    "displayName": "Execute Command",
+    "category": "execution",
+    "sideEffecting": true,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      },
+      {
+        "name": "error",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "command": {
+        "type": "string",
+        "description": "Shell command"
+      },
+      "shell": {
+        "type": "string",
+        "default": "/bin/bash"
+      }
+    }
+  },
+  {
+    "type": "logic.if",
+    "version": 1,
+    "displayName": "IF",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "true",
+        "type": "item"
+      },
+      {
+        "name": "false",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "condition": {
+        "type": "string",
+        "description": "Expression to evaluate"
+      }
+    }
+  },
+  {
+    "type": "state.get",
+    "version": 1,
+    "displayName": "Get State",
+    "category": "state",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "key": {
+        "type": "string",
+        "description": "State key to read"
+      }
+    }
+  },
+  {
+    "type": "state.set",
+    "version": 1,
+    "displayName": "Set State",
+    "category": "state",
+    "sideEffecting": true,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "key": {
+        "type": "string",
+        "description": "State key"
+      },
+      "valueExpression": {
+        "type": "string",
+        "description": "Expression for value"
+      }
+    }
+  },
+  {
+    "type": "logic.delay",
+    "version": 1,
+    "displayName": "Delay",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "seconds": {
+        "type": "number",
+        "description": "Seconds to delay",
+        "default": 1
+      }
+    }
+  },
+  {
+    "type": "logic.set",
+    "version": 1,
+    "displayName": "Set Fields",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "assignments": {
+        "type": "array",
+        "description": "Field assignments",
+        "items": {
+          "field": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  {
+    "type": "error.throw",
+    "version": 1,
+    "displayName": "Throw Error",
+    "category": "logic",
+    "sideEffecting": true,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "error",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "message": {
+        "type": "string",
+        "description": "Error message"
+      }
+    }
+  },
+  {
+    "type": "logic.switch",
+    "version": 1,
+    "displayName": "Switch",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "rules": {
+        "type": "array",
+        "description": "Switch rules",
+        "items": {
+          "label": {
+            "type": "string"
+          },
+          "expression": {
+            "type": "string"
+          }
+        }
+      },
+      "fallback": {
+        "type": "string",
+        "description": "Default output label"
+      }
+    }
+  },
+  {
+    "type": "logic.merge",
+    "version": 1,
+    "displayName": "Merge",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in1",
+        "type": "item"
+      },
+      {
+        "name": "in2",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "mode": {
+        "type": "string",
+        "default": "append",
+        "description": "append or keep-key"
+      },
+      "keyField": {
+        "type": "string",
+        "description": "Key field for deduplication in keep-key mode"
+      }
+    }
+  },
+  {
+    "type": "logic.loop",
+    "version": 1,
+    "displayName": "Loop",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      },
+      {
+        "name": "done",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "batchSize": {
+        "type": "number",
+        "default": 1,
+        "description": "Items per iteration"
+      }
+    }
+  },
+  {
+    "type": "logic.code",
+    "version": 1,
+    "displayName": "Code",
+    "category": "logic",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "language": {
+        "type": "string",
+        "default": "javascript",
+        "description": "Code language"
+      },
+      "code": {
+        "type": "string",
+        "description": "Code to execute"
+      }
+    }
+  },
+  {
+    "type": "vision.screenshot",
+    "version": 1,
+    "displayName": "Screenshot",
+    "category": "vision",
+    "icon": "📸",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "screen": true
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "display": {
+        "type": "string",
+        "default": "current",
+        "description": "Display to capture"
+      }
+    }
+  },
+  {
+    "type": "vision.ocr",
+    "version": 1,
+    "displayName": "OCR",
+    "category": "vision",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "imagePath": {
+        "type": "string",
+        "description": "Path to image file"
+      },
+      "lang": {
+        "type": "string",
+        "default": "eng",
+        "description": "OCR language"
+      },
+      "engine": {
+        "type": "string",
+        "description": "OCR engine: tesseract or wasm"
+      }
+    }
+  },
+  {
+    "type": "vision.image.detect",
+    "version": 1,
+    "displayName": "Image Detect",
+    "category": "vision",
+    "sideEffecting": false,
+    "requiredCapabilities": {
+      "tools": [
+        "compare"
+      ]
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "template": {
+        "type": "string",
+        "description": "Path to template image"
+      },
+      "confidence": {
+        "type": "number",
+        "default": 0.8,
+        "description": "Minimum confidence threshold (0-1)"
+      },
+      "method": {
+        "type": "string",
+        "default": "template-matching",
+        "description": "Detection method"
+      }
+    }
+  },
+  {
+    "type": "vision.llm",
+    "version": 1,
+    "displayName": "LLM Vision",
+    "category": "vision",
+    "sideEffecting": true,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "prompt": {
+        "type": "string",
+        "description": "Prompt for the LLM"
+      },
+      "model": {
+        "type": "string",
+        "default": "openai/gpt-4o",
+        "description": "OpenRouter model ID"
+      },
+      "imagePath": {
+        "type": "string",
+        "description": "Path to image file"
+      }
+    }
+  },
+  {
+    "type": "input.mouse.click",
+    "version": 1,
+    "displayName": "Mouse Click",
+    "category": "input",
+    "icon": "🖱️",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "input": "xdotool"
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "x": {
+        "type": "number",
+        "description": "X coordinate"
+      },
+      "y": {
+        "type": "number",
+        "description": "Y coordinate"
+      },
+      "button": {
+        "type": "string",
+        "default": "left",
+        "description": "Mouse button: left, right, middle"
+      },
+      "clickCount": {
+        "type": "number",
+        "default": 1,
+        "description": "Number of clicks"
+      }
+    }
+  },
+  {
+    "type": "input.mouse.move",
+    "version": 1,
+    "displayName": "Mouse Move",
+    "category": "input",
+    "icon": "🖱️",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "input": "xdotool"
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "x": {
+        "type": "number",
+        "description": "X coordinate"
+      },
+      "y": {
+        "type": "number",
+        "description": "Y coordinate"
+      }
+    }
+  },
+  {
+    "type": "input.keyboard.type",
+    "version": 1,
+    "displayName": "Keyboard Type",
+    "category": "input",
+    "icon": "⌨️",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "input": "xdotool"
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "text": {
+        "type": "string",
+        "description": "Text to type"
+      },
+      "delay": {
+        "type": "number",
+        "default": 12,
+        "description": "Delay between keystrokes in ms"
+      }
+    }
+  },
+  {
+    "type": "input.keyboard.key",
+    "version": 1,
+    "displayName": "Keyboard Key",
+    "category": "input",
+    "icon": "⌨️",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "input": "xdotool"
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "key": {
+        "type": "string",
+        "description": "Key combination (e.g. ctrl+s, Return, Escape)"
+      }
+    }
+  },
+  {
+    "type": "system.launch",
+    "version": 1,
+    "displayName": "Launch Program",
+    "category": "execution",
+    "icon": "🚀",
+    "sideEffecting": true,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "command": {
+        "type": "string",
+        "description": "Command to launch"
+      },
+      "shell": {
+        "type": "string",
+        "default": "/bin/bash"
+      },
+      "waitForWindowSec": {
+        "type": "number",
+        "default": 0,
+        "description": "Seconds to wait for a window to appear (0 = don't wait)"
+      }
+    }
+  },
+  {
+    "type": "vision.window.list",
+    "version": 1,
+    "displayName": "List Windows",
+    "category": "vision",
+    "icon": "🪟",
+    "sideEffecting": false,
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "filter": {
+        "type": "string",
+        "default": "",
+        "description": "Regex to filter window titles"
+      },
+      "pid": {
+        "type": "number",
+        "default": 0,
+        "description": "Filter by process ID (0 = no filter)"
+      },
+      "includeGeometry": {
+        "type": "boolean",
+        "default": true,
+        "description": "Include window position and size"
+      }
+    }
+  },
+  {
+    "type": "vision.window.screenshot",
+    "version": 1,
+    "displayName": "Window Screenshot",
+    "category": "vision",
+    "icon": "🖼️",
+    "sideEffecting": true,
+    "requiredCapabilities": {
+      "screen": true
+    },
+    "inputs": [
+      {
+        "name": "in",
+        "type": "item"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "out",
+        "type": "item"
+      }
+    ],
+    "paramsSchema": {
+      "windowId": {
+        "type": "string",
+        "default": "",
+        "description": "Hex window ID (e.g. 0x05600004)"
+      },
+      "pid": {
+        "type": "number",
+        "default": 0,
+        "description": "Filter by process ID (0 = use windowId instead)"
+      },
+      "title": {
+        "type": "string",
+        "default": "",
+        "description": "Regex to find window by title"
+      },
+      "activateFirst": {
+        "type": "boolean",
+        "default": true,
+        "description": "Activate window before capture"
+      },
+      "delayMs": {
+        "type": "number",
+        "default": 200,
+        "description": "Delay after activation in ms"
+      }
+    }
+  }
+]

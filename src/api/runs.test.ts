@@ -30,15 +30,21 @@ function createTestDb(): Database {
   return db;
 }
 
-function insertAutomation(db: Database, id: string, name: string, definition: any, versionId?: string) {
+function insertAutomation(
+  db: Database,
+  id: string,
+  name: string,
+  definition: any,
+  versionId?: string,
+) {
   const now = new Date().toISOString();
   const defJson = JSON.stringify(definition);
   const vid = versionId ?? "v-" + id;
   db.prepare(
-    "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO automations (id, name, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
   ).run(id, name, defJson, JSON.stringify(definition.settings), now, now);
   db.prepare(
-    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
   ).run(vid, id, 1, defJson, now);
 }
 
@@ -46,7 +52,11 @@ function makeDefinition() {
   return {
     schemaVersion: 1 as const,
     name: "Test Automation",
-    settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+    settings: {
+      runTimeoutSec: 3600,
+      savePayloads: true,
+      errorAutomationId: null,
+    },
     nodes: [],
     edges: [],
   };
@@ -62,23 +72,29 @@ describe("runAutomation", () => {
   });
 
   test("returns null for non-existent automation", async () => {
-    const result = await runAutomation(db, dispatcher, "no-such-id", { mode: "manual" });
+    const result = await runAutomation(db, dispatcher, "no-such-id", {
+      mode: "manual",
+    });
     expect(result).toBeNull();
   });
 
   test("returns null for automation without definition", async () => {
     const now = new Date().toISOString();
     db.prepare(
-      "INSERT INTO automations (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)"
+      "INSERT INTO automations (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)",
     ).run("empty-auto", "Empty", now, now);
-    const result = await runAutomation(db, dispatcher, "empty-auto", { mode: "manual" });
+    const result = await runAutomation(db, dispatcher, "empty-auto", {
+      mode: "manual",
+    });
     expect(result).toBeNull();
   });
 
   test("runs automation with valid definition", async () => {
     const def = makeDefinition();
     insertAutomation(db, "auto-1", "Test Auto", def);
-    const result = await runAutomation(db, dispatcher, "auto-1", { mode: "manual" });
+    const result = await runAutomation(db, dispatcher, "auto-1", {
+      mode: "manual",
+    });
     expect(result).not.toBeNull();
     expect(result!.automationId).toBe("auto-1");
     expect(result!.status).toBe("success");
@@ -91,12 +107,22 @@ describe("runAutomation", () => {
     const now = new Date().toISOString();
     const defJson = JSON.stringify(def);
     db.prepare(
-      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("auto-2", "Active Auto", versionId, defJson, JSON.stringify(def.settings), now, now);
+      "INSERT INTO automations (id, name, active_version_id, draft_json, settings_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "auto-2",
+      "Active Auto",
+      versionId,
+      defJson,
+      JSON.stringify(def.settings),
+      now,
+      now,
+    );
     db.prepare(
-      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO automation_versions (id, automation_id, version_no, definition_json, created_at) VALUES (?, ?, ?, ?, ?)",
     ).run(versionId, "auto-2", 1, defJson, now);
-    const result = await runAutomation(db, dispatcher, "auto-2", { mode: "manual" });
+    const result = await runAutomation(db, dispatcher, "auto-2", {
+      mode: "manual",
+    });
     expect(result).not.toBeNull();
     expect(result!.versionId).toBe(versionId);
   });
@@ -117,7 +143,9 @@ describe("getRun", () => {
     const db = createTestDb();
     const def = makeDefinition();
     insertAutomation(db, "auto-1", "Test", def);
-    const run = await runAutomation(db, dispatcher, "auto-1", { mode: "manual" });
+    const run = await runAutomation(db, dispatcher, "auto-1", {
+      mode: "manual",
+    });
     const got = getRun(dispatcher, run!.id);
     expect(got).not.toBeNull();
     expect(got!.id).toBe(run!.id);
@@ -141,7 +169,14 @@ describe("listRuns", () => {
     const def = makeDefinition();
     insertAutomation(db, "auto-1", "Test", def);
     await runAutomation(db, dispatcher, "auto-1", { mode: "manual" });
-    await runAutomation(db, dispatcher, "auto-1", { mode: "trigger", triggerData: [] });
+    db.prepare("UPDATE automations SET active_version_id=? WHERE id=?").run(
+      "v-auto-1",
+      "auto-1",
+    );
+    await runAutomation(db, dispatcher, "auto-1", {
+      mode: "trigger",
+      triggerData: [],
+    });
     const all = listRuns(dispatcher);
     expect(all.length).toBe(2);
   });

@@ -80,7 +80,12 @@ describe("ArtifactStore", () => {
 
   test("getArtifactMeta returns metadata without data", () => {
     const data = Buffer.from("metadata test");
-    const meta = store.storeArtifact(data, "application/json", "data.json", "run-1");
+    const meta = store.storeArtifact(
+      data,
+      "application/json",
+      "data.json",
+      "run-1",
+    );
 
     const metaOnly = store.getArtifactMeta(meta.id);
     expect(metaOnly).not.toBeNull();
@@ -94,10 +99,19 @@ describe("ArtifactStore", () => {
 
   test("cleanupExpired removes expired artifacts", () => {
     const data = Buffer.from("expiring soon");
-    const meta = store.storeArtifact(data, "text/plain", "expire.txt", "run-1", 0);
+    const meta = store.storeArtifact(
+      data,
+      "text/plain",
+      "expire.txt",
+      "run-1",
+      1,
+    );
 
     const past = new Date(Date.now() - 1000).toISOString();
-    db.prepare("UPDATE artifacts SET expires_at = ? WHERE id = ?").run(past, meta.id);
+    db.prepare("UPDATE artifacts SET expires_at = ? WHERE id = ?").run(
+      past,
+      meta.id,
+    );
 
     const deleted = store.cleanupExpired();
     expect(deleted).toBeGreaterThanOrEqual(1);
@@ -106,7 +120,13 @@ describe("ArtifactStore", () => {
 
   test("cleanupExpired does not remove non-expired artifacts", () => {
     const data = Buffer.from("staying alive");
-    const meta = store.storeArtifact(data, "text/plain", "keep.txt", "run-1", 720);
+    const meta = store.storeArtifact(
+      data,
+      "text/plain",
+      "keep.txt",
+      "run-1",
+      720,
+    );
 
     const deleted = store.cleanupExpired();
     expect(store.getArtifact(meta.id)).not.toBeNull();
@@ -114,7 +134,12 @@ describe("ArtifactStore", () => {
 
   test("storeArtifactStream delegates to storeArtifact", () => {
     const data = Buffer.from("stream data");
-    const meta = store.storeArtifactStream(data, "text/plain", "stream.txt", "run-1");
+    const meta = store.storeArtifactStream(
+      data,
+      "text/plain",
+      "stream.txt",
+      "run-1",
+    );
     expect(meta).toBeDefined();
     expect(meta.size).toBe(data.length);
     const result = store.getArtifact(meta.id);

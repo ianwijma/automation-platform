@@ -1,4 +1,5 @@
-import { useEffect, useCallback } from "react";
+import { fetchJson } from "./hooks/useApi";
+import { useEffect, useCallback, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
 import { useAppStore } from "./store";
 import { AutomationCanvas } from "./components/AutomationCanvas";
@@ -29,6 +30,7 @@ function formatUptime(seconds: number): string {
 }
 
 function App() {
+  const [adminToken, setAdminToken] = useState("");
   const systemInfo = useAppStore((s) => s.systemInfo);
   const systemError = useAppStore((s) => s.systemError);
   const fetchSystemInfo = useAppStore((s) => s.fetchSystemInfo);
@@ -51,6 +53,7 @@ function App() {
   const setShowVersionHistory = useAppStore((s) => s.setShowVersionHistory);
   const settingsOpen = useAppStore((s) => s.settingsOpen);
   const toggleSettings = useAppStore((s) => s.toggleSettings);
+  const actionError = useAppStore((s) => s.actionError);
   const saveError = useAppStore((s) => s.saveError);
 
   useEffect(() => {
@@ -67,8 +70,53 @@ function App() {
     runCurrentAutomation();
   }, [runCurrentAutomation]);
 
+  if (actionError?.includes("API 401"))
+    return (
+      <main className="flex h-screen items-center justify-center bg-gray-950 text-gray-200">
+        <form
+          className="flex w-96 flex-col gap-4 p-6"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            try {
+              await fetchJson("/api/session", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${adminToken}` },
+              });
+              setAdminToken("");
+              useAppStore.setState({ actionError: null });
+              await Promise.all([fetchAutomations(), fetchAgents()]);
+            } catch {
+              useAppStore.setState({
+                actionError: "API 401: Invalid administrator token",
+              });
+            }
+          }}
+        >
+          <h1 className="text-lg">Connect to Automation Platform</h1>
+          <label htmlFor="admin-token">Administrator token</label>
+          <input
+            id="admin-token"
+            type="password"
+            autoComplete="current-password"
+            className="rounded bg-gray-800 p-2"
+            value={adminToken}
+            onChange={(event) => setAdminToken(event.target.value)}
+          />
+          <button className="rounded bg-indigo-600 p-2">Connect</button>
+          <p role="alert" className="text-xs">
+            {actionError}
+          </p>
+        </form>
+      </main>
+    );
+
   return (
     <div className="flex h-screen flex-col bg-gray-950 text-gray-100">
+      {actionError && (
+        <div role="alert" className="bg-red-950 px-4 py-2 text-xs text-red-300">
+          {actionError}
+        </div>
+      )}
       <header className="flex h-11 items-center justify-between border-b border-gray-800 bg-gray-900 px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-6 w-6 items-center justify-center rounded bg-indigo-600 text-[10px] font-bold text-white">
@@ -169,7 +217,9 @@ function App() {
       {isPreviewMode && previewVersion && (
         <div className="flex items-center gap-2 border-b border-indigo-700/30 bg-indigo-950/30 px-4 py-1.5 text-xs text-indigo-400">
           <Eye className="h-3.5 w-3.5" />
-          <span className="font-medium">Previewing v{previewVersion.versionNo}</span>
+          <span className="font-medium">
+            Previewing v{previewVersion.versionNo}
+          </span>
           <span className="text-indigo-500">Read-only mode</span>
           <button
             onClick={clearPreviewVersion}
@@ -271,7 +321,9 @@ function App() {
           <button
             onClick={toggleSettings}
             className={`flex items-center gap-1 rounded px-1.5 py-0.5 ${
-              settingsOpen ? "text-indigo-400" : "text-gray-600 hover:text-gray-400"
+              settingsOpen
+                ? "text-indigo-400"
+                : "text-gray-600 hover:text-gray-400"
             }`}
           >
             <Settings className="h-3 w-3" />

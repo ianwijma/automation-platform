@@ -1,4 +1,8 @@
-import type { AutomationDefinition, AutomationSettings, AutomationTarget, RetryPolicy } from "./types.js";
+import type {
+  AutomationDefinition,
+  AutomationSettings,
+  AutomationTarget,
+} from "./types.js";
 import type { NodeItem, CapabilityReport } from "./node-contract.js";
 
 export interface SystemInfoResponse {
@@ -8,6 +12,7 @@ export interface SystemInfoResponse {
 }
 
 export interface AutomationResponse {
+  revision?: string;
   id: string;
   name: string;
   activeVersionId: string | null;
@@ -27,11 +32,20 @@ export interface AutomationVersionResponse {
 }
 
 export interface RunResponse {
+  dryRun?: boolean;
+  errorHandlerRunId?: string;
+  errorHandlerError?: string;
   id: string;
   automationId: string;
   versionId: string;
   mode: "manual" | "trigger" | "dry" | "partial";
-  status: "queued" | "running" | "success" | "error" | "interrupted" | "cancelled";
+  status:
+    | "queued"
+    | "running"
+    | "success"
+    | "error"
+    | "interrupted"
+    | "cancelled";
   trigger: Record<string, unknown> | null;
   startedAt: string;
   finishedAt: string | null;
@@ -39,11 +53,25 @@ export interface RunResponse {
 }
 
 export interface NodeExecutionResponse {
+  payloadArtifact?: {
+    $artifact: string;
+    mime: string;
+    size: number;
+    name: string;
+  };
+  outputs?: Record<string, import("./node-contract.js").NodeItem[]>;
+  simulation?: import("./node-contract.js").SimulationReport;
   id: string;
   runId: string;
   nodeId: string;
   agentId: string;
-  status: "success" | "error" | "timeout" | "cancelled" | "interrupted";
+  status:
+    | "running"
+    | "success"
+    | "error"
+    | "timeout"
+    | "cancelled"
+    | "interrupted";
   attempt: number;
   simulated: boolean;
   input: NodeItem[] | null;
@@ -89,9 +117,16 @@ export interface RunRequest {
 }
 
 export interface ExportResponse {
+  formatVersion?: 1;
   automation: AutomationDefinition;
   credentials: Array<{ type: string; name: string }>;
-  envVars: Array<{ scope: string; scopeId: string | null; key: string; isSecret: boolean }>;
+  envVars: Array<{
+    scope: string;
+    scopeId: string | null;
+    key: string;
+    isSecret: boolean;
+    value?: string;
+  }>;
   agentMapping: Record<string, string[]>;
 }
 
@@ -109,18 +144,33 @@ export interface AiChatRequest {
 }
 
 export interface AiChatResponse {
+  baseRevision?: string;
   message: string;
   diffs?: AiDiff[];
 }
 
 export interface AiDiff {
-  op: "add-node" | "remove-node" | "update-node-params" | "add-edge" | "remove-edge" | "update-settings";
+  op:
+    | "add-node"
+    | "remove-node"
+    | "update-node-params"
+    | "add-edge"
+    | "remove-edge"
+    | "update-settings";
   path: string;
   value: unknown;
   description: string;
 }
 
 export interface AiApplyRequest {
+  baseRevision?: string;
   automationId: string;
   diffs: AiDiff[];
+}
+
+export interface AiSettingsResponse {
+  aiApiKey: string | null;
+  aiModel: string;
+  aiEndpoint: string | null;
+  hasApiKey: boolean;
 }

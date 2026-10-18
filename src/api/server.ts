@@ -1,3 +1,7 @@
+import { bundledFile, installBundledHelper } from "../core/bundled-assets.js";
+import { createRequestGuard } from "./security.js";
+import { TriggerManager } from "./trigger-manager.js";
+import { probeCapabilities } from "../agent/capability-probe.js";
 import { resolve, extname, join, relative } from "node:path";
 import { statSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import type { AppConfig } from "../cli/config.js";
@@ -36,12 +40,7 @@ const MIME_TYPES: Record<string, string> = {
   ".xml": "application/xml; charset=utf-8",
 };
 
-const CORS_HEADERS: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Agent-Token",
-  "Access-Control-Max-Age": "86400",
-};
+const CORS_HEADERS: Record<string, string> = {};
 
 const UI_DIST_DEFAULT = resolve(import.meta.dir, "../../ui/dist");
 
@@ -86,7 +85,7 @@ interface WsData {
 
 interface ServerResult {
   server: ReturnType<typeof Bun.serve<WsData>>;
-  close: () => void;
+  close: () => Promise<void>;
 }
 
 export function createServer(options: {
@@ -97,33 +96,61 @@ export function createServer(options: {
   uiDist?: string;
 }): ServerResult {
   const { port, host, db, config } = options;
+  installBundledHelper(config.dataDir);
+  const guard = createRequestGuard({ ...config, host });
   const UI_DIST = options.uiDist ?? process.env.AP_UI_DIST ?? UI_DIST_DEFAULT;
 
   const hub = new WssHub(db.db);
   const artifactStore = new ArtifactStore(config.dataDir, db.db);
+  hub.artifactStore = artifactStore;
   const vault = new CredentialVault(db);
   const envResolver = new EnvResolver(db, vault);
-  const fleetDispatcher = new FleetDispatcher(hub, vault, envResolver, artifactStore);
+  const fleetDispatcher = new FleetDispatcher(
+    hub,
+    vault,
+    envResolver,
+    artifactStore,
+  );
 
-  mkdirSync(config.dataDir, { recursive: true });
+  fleetDispatcher.attachDatabase(db.db);
+  const triggers = new TriggerManager(db.db, fleetDispatcher);
+  triggers.start();
+  const gcTimer = setInterval(() => artifactStore.cleanupExpired(), 60_000);
+  artifactStore.cleanupExpired();
+  let stopped = false;
+  void probeCapabilities()
+    .then((caps) => {
+      if (!stopped) fleetDispatcher.registerLocalCapabilities(caps);
+    })
+    .catch((error) => console.error("Capability probe failed:", error.message));
+  mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
 
   hub.onMessage((agentId, msg) => {
-    if (msg.type === "hello") return;
     const conn = hub.getAgentConnection(agentId);
-    if (conn && !fleetDispatcher.getFleetAgents().find((a) => a.agentId === agentId)) {
-      fleetDispatcher.registerRemoteAgent(agentId, conn.name, conn.capabilities, conn.tags);
+    if (conn) {
+      fleetDispatcher.registerRemoteAgent(
+        agentId,
+        conn.name,
+        conn.capabilities,
+        conn.tags,
+      );
     }
   });
 
   const server = Bun.serve<WsData>({
     port,
     hostname: host,
+    maxRequestBodySize: 32 * 1024 * 1024,
     fetch(req: Request, server): Response | Promise<Response> {
+      const denied = guard(req);
+      if (denied) return denied;
       const url = new URL(req.url);
       const pathname = url.pathname;
 
-      if (pathname === "/api/agent/connect" &&
-        req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+      if (
+        pathname === "/api/agent/connect" &&
+        req.headers.get("upgrade")?.toLowerCase() === "websocket"
+      ) {
         const success = server.upgrade(req, {
           data: { connectedAt: Date.now(), agentId: null },
         });
@@ -146,16 +173,46 @@ export function createServer(options: {
       }
 
       if (pathname.startsWith("/api/") || pathname.startsWith("/hooks/")) {
-        const result = handleApiRoute(db.db, fleetDispatcher, req, fleetDispatcher, hub, artifactStore, db, vault, envResolver);
+        if (pathname === "/api/triggers/status" && req.method === "GET")
+          return json(
+            [...triggers.errors].map(([id, error]) => ({ id, error })),
+          );
+        const result = handleApiRoute(
+          db.db,
+          fleetDispatcher,
+          req,
+          fleetDispatcher,
+          hub,
+          artifactStore,
+          db,
+          vault,
+          envResolver,
+        );
         if (result !== null) return result;
         return json({ error: "Not found" }, 404);
       }
 
       if (req.method === "GET") {
+        if (!options.uiDist && !process.env.AP_UI_DIST) {
+          const asset =
+            bundledFile(`ui${pathname === "/" ? "/index.html" : pathname}`) ??
+            (!extname(pathname) ? bundledFile("ui/index.html") : undefined);
+          if (asset)
+            return new Response(asset as Uint8Array<ArrayBuffer>, {
+              headers: {
+                "Content-Type": mimeTypeFor(
+                  pathname === "/" || !extname(pathname)
+                    ? "index.html"
+                    : pathname,
+                ),
+                "X-Content-Type-Options": "nosniff",
+              },
+            });
+        }
         const safePath = join(UI_DIST, relative("/", pathname) || "index.html");
         const resolvedPath = resolve(safePath);
 
-        if (!resolvedPath.startsWith(UI_DIST)) {
+        if (!resolvedPath.startsWith(resolve(UI_DIST) + "/")) {
           return json({ error: "Not found" }, 404);
         }
 
@@ -172,6 +229,7 @@ export function createServer(options: {
       return json({ error: "Not found" }, 404);
     },
     websocket: {
+      maxPayloadLength: 48 * 1024 * 1024,
       open(ws) {
         hub.handleOpen(ws);
       },
@@ -184,16 +242,28 @@ export function createServer(options: {
     },
   });
 
-  const close = () => {
-    hub.close();
-    server.stop();
-    db.close();
+  let closing: Promise<void> | undefined;
+  const close = () =>
+    (closing ??= (async () => {
+      process.removeListener("SIGTERM", shutdown);
+      process.removeListener("SIGINT", shutdown);
+      stopped = true;
+      triggers.stop();
+      clearInterval(gcTimer);
+      await fleetDispatcher.shutdown();
+      hub.close();
+      // Bun 1.3 can leave stop() pending after a WebSocket close handshake.
+      // stop(true) stops accepting requests immediately; all dispatch work is drained above.
+      await Promise.race([
+        server.stop(true),
+        new Promise((resolve) => setTimeout(resolve, 250)),
+      ]);
+      db.close();
+    })());
+  const shutdown = () => {
+    void close().then(() => process.exit(0));
   };
-
-  process.on("SIGTERM", () => {
-    close();
-    process.exit(0);
-  });
-
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
   return { server, close };
 }

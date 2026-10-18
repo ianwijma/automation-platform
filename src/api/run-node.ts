@@ -1,5 +1,9 @@
 import type { Database } from "bun:sqlite";
-import type { RunRecord, NodeExecutionRecord, RunOptions } from "../core/execution-engine.js";
+import type {
+  RunRecord,
+  NodeExecutionRecord,
+  RunOptions,
+} from "../core/execution-engine.js";
 import type { NodeItem } from "../core/node-contract.js";
 import type { AgentDispatcher } from "../agent/dispatcher.js";
 import type { AutomationDefinition } from "../core/types.js";
@@ -15,7 +19,10 @@ interface AutomationRow {
   updated_at: string;
 }
 
-function getUpstreamNodeIds(definition: AutomationDefinition, targetNodeId: string): Set<string> {
+function getUpstreamNodeIds(
+  definition: AutomationDefinition,
+  targetNodeId: string,
+): Set<string> {
   const visited = new Set<string>();
   const queue = [targetNodeId];
 
@@ -45,17 +52,29 @@ function buildPinDataFromRuns(
   dispatcher: AgentDispatcher,
   automationId: string,
   upstreamNodeIds: Set<string>,
+  definition: AutomationDefinition,
 ): Record<string, NodeItem[]> | null {
-  const allRuns = dispatcher.getAllRuns()
-    .filter((r) => r.automationId === automationId)
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const allRuns = dispatcher
+    .getAllRuns()
+    .filter(
+      (r) =>
+        r.automationId === automationId &&
+        JSON.stringify(r.definition) === JSON.stringify(definition),
+    )
+    .sort(
+      (a, b) =>
+        new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
 
-  for (const run of allRuns) {
+  for (const saved of allRuns) {
+    const run = dispatcher.getRun(saved.id, true)!;
     const pinData: Record<string, NodeItem[]> = {};
     let allCovered = true;
 
     for (const nodeId of upstreamNodeIds) {
-      const ne = run.nodeExecutions.find((n) => n.nodeId === nodeId && n.output);
+      const ne = run.nodeExecutions.find(
+        (n) => n.nodeId === nodeId && n.output,
+      );
       if (ne && ne.output) {
         pinData[nodeId] = ne.output;
       } else {
@@ -71,7 +90,9 @@ function buildPinDataFromRuns(
 }
 
 export interface RunNodeOptions {
+  runId?: string;
   fresh?: boolean;
+  dryRun?: boolean;
   inputData?: NodeItem[];
 }
 
@@ -82,7 +103,9 @@ export async function runNode(
   nodeId: string,
   opts: RunNodeOptions = {},
 ): Promise<RunRecord | null> {
-  const autoRow = db.query<AutomationRow, [string]>("SELECT * FROM automations WHERE id = ?").get(automationId);
+  const autoRow = db
+    .query<AutomationRow, [string]>("SELECT * FROM automations WHERE id = ?")
+    .get(automationId);
   if (!autoRow) return null;
 
   const definitionJson = autoRow.draft_json;
@@ -97,15 +120,15 @@ export async function runNode(
   let pinData: Record<string, NodeItem[]> = {};
   let nodeScope: "to" | "single";
 
-  if (opts.inputData && opts.inputData.length > 0) {
-    const triggerNodes = findTriggerNodes(definition);
-    for (const tid of triggerNodes) {
-      pinData[tid] = opts.inputData;
-    }
-  }
-
-  if (!opts.fresh && upstreamNodeIds.size > 0) {
-    const cachedPin = buildPinDataFromRuns(dispatcher, automationId, upstreamNodeIds);
+  if (opts.inputData) {
+    nodeScope = "single";
+  } else if (!opts.fresh && upstreamNodeIds.size > 0) {
+    const cachedPin = buildPinDataFromRuns(
+      dispatcher,
+      automationId,
+      upstreamNodeIds,
+      definition,
+    );
     if (cachedPin) {
       Object.assign(pinData, cachedPin);
       nodeScope = "single";
@@ -121,6 +144,9 @@ export async function runNode(
   const engine = new ExecutionEngine(dispatcher);
   const options: RunOptions = {
     mode: "partial",
+    runId: opts.runId,
+    dryRun: opts.dryRun,
+    inputData: opts.inputData,
     fromNodeId: nodeId,
     nodeScope,
     pinData: Object.keys(pinData).length > 0 ? pinData : undefined,

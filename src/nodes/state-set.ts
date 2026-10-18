@@ -1,4 +1,9 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import { createExpressionEvaluator } from "../core/expressions.js";
 import type { ExpressionContext } from "../core/expression-contract.js";
@@ -29,7 +34,7 @@ const definition: NodeDefinition<StateSetParams> = {
       items: ctx.items,
       node: { id: ctx.nodeId, name: ctx.nodeName },
       env: ctx.env,
-      state: {},
+      state: ctx.stateSnapshot ?? {},
       now: ctx.now,
     };
 
@@ -40,9 +45,11 @@ const definition: NodeDefinition<StateSetParams> = {
   },
 
   async simulate(ctx: RunContext<StateSetParams>): Promise<SimulationReport> {
+    await definition.run(ctx); // The executor supplies a run-local state overlay.
     return {
       description: "Set State",
       wouldDo: `would set state key '${ctx.params.key}'`,
+      data: ctx.items,
     };
   },
 };

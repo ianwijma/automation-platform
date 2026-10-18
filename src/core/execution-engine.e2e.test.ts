@@ -8,7 +8,11 @@ import type { AutomationDefinition } from "./types.js";
 const MIXED_EXEC_DEFINITION: AutomationDefinition = {
   schemaVersion: 1,
   name: "Mixed Execution Test",
-  settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+  settings: {
+    runTimeoutSec: 3600,
+    savePayloads: true,
+    errorAutomationId: null,
+  },
   nodes: [
     {
       id: "n1",
@@ -62,10 +66,34 @@ const MIXED_EXEC_DEFINITION: AutomationDefinition = {
     },
   ],
   edges: [
-    { id: "e1", source: "n1", sourcePort: "out", target: "n2", targetPort: "in" },
-    { id: "e2", source: "n2", sourcePort: "out", target: "n3", targetPort: "in" },
-    { id: "e3", source: "n3", sourcePort: "out", target: "n4", targetPort: "in" },
-    { id: "e4", source: "n4", sourcePort: "true", target: "n5", targetPort: "in" },
+    {
+      id: "e1",
+      source: "n1",
+      sourcePort: "out",
+      target: "n2",
+      targetPort: "in",
+    },
+    {
+      id: "e2",
+      source: "n2",
+      sourcePort: "out",
+      target: "n3",
+      targetPort: "in",
+    },
+    {
+      id: "e3",
+      source: "n3",
+      sourcePort: "out",
+      target: "n4",
+      targetPort: "in",
+    },
+    {
+      id: "e4",
+      source: "n4",
+      sourcePort: "true",
+      target: "n5",
+      targetPort: "in",
+    },
   ],
 };
 
@@ -79,9 +107,14 @@ describe("M10 — Hardening & E2E", () => {
   });
 
   test("mixed-execution scenario: local trigger → command → command → if → follow-up", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-1", "v1", {
-      mode: "manual",
-    });
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "mixed-test-1",
+      "v1",
+      {
+        mode: "manual",
+      },
+    );
 
     expect(run.status).toBe("success");
     expect(run.nodeExecutions.length).toBe(5);
@@ -110,9 +143,14 @@ describe("M10 — Hardening & E2E", () => {
   });
 
   test("no special-casing: all nodes use same agentId when running locally", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-2", "v1", {
-      mode: "manual",
-    });
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "mixed-test-2",
+      "v1",
+      {
+        mode: "manual",
+      },
+    );
 
     expect(run.status).toBe("success");
     for (const ne of run.nodeExecutions) {
@@ -126,9 +164,14 @@ describe("M10 — Hardening & E2E", () => {
       settings: { ...MIXED_EXEC_DEFINITION.settings, savePayloads: false },
     };
 
-    const run = await engine.execute(noPayloadDefinition, "mixed-test-3", "v1", {
-      mode: "manual",
-    });
+    const run = await engine.execute(
+      noPayloadDefinition,
+      "mixed-test-3",
+      "v1",
+      {
+        mode: "manual",
+      },
+    );
 
     expect(run.status).toBe("success");
 
@@ -139,24 +182,37 @@ describe("M10 — Hardening & E2E", () => {
   });
 
   test("re-run-from-node using recorded data", async () => {
-    const originalRun = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-4", "v1", {
-      mode: "manual",
-    });
+    const originalRun = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "mixed-test-4",
+      "v1",
+      {
+        mode: "manual",
+      },
+    );
 
     expect(originalRun.status).toBe("success");
     expect(originalRun.nodeExecutions.length).toBe(5);
 
-    const cmd1Output = originalRun.nodeExecutions.find((n) => n.nodeId === "n2")?.output;
+    const cmd1Output = originalRun.nodeExecutions.find(
+      (n) => n.nodeId === "n2",
+    )?.output;
     expect(cmd1Output).toBeDefined();
     expect(cmd1Output?.[0]?.json?.stdout).toBe("metrics-output\n");
 
-    const rerunResult = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-4", "v1", {
-      mode: "partial",
-      fromNodeId: "n2",
-      pinData: {
-        n1: originalRun.nodeExecutions.find((n) => n.nodeId === "n1")!.output!,
+    const rerunResult = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "mixed-test-4",
+      "v1",
+      {
+        mode: "partial",
+        fromNodeId: "n2",
+        pinData: {
+          n1: originalRun.nodeExecutions.find((n) => n.nodeId === "n1")!
+            .output!,
+        },
       },
-    });
+    );
 
     expect(rerunResult.status).toBe("success");
     expect(rerunResult.nodeExecutions.length).toBe(4);
@@ -172,11 +228,16 @@ describe("M10 — Hardening & E2E", () => {
     expect(followup?.status).toBe("success");
   });
 
-  test("dry-run produces simulation reports for all nodes", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "mixed-test-5", "v1", {
-      mode: "dry",
-      dryRun: true,
-    });
+  test("dry-run simulates actions and evaluates pure logic", async () => {
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "mixed-test-5",
+      "v1",
+      {
+        mode: "dry",
+        dryRun: true,
+      },
+    );
 
     expect(run.status).toBe("success");
 
@@ -184,16 +245,21 @@ describe("M10 — Hardening & E2E", () => {
     expect(cmd1?.simulated).toBe(true);
 
     const ifNode = run.nodeExecutions.find((n) => n.nodeId === "n4");
-    expect(ifNode?.simulated).toBe(true);
+    expect(ifNode?.simulated).toBe(false);
   });
 
   test("nodeScope 'single' executes only the target node", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-single-1", "v1", {
-      mode: "partial",
-      fromNodeId: "n2",
-      nodeScope: "single",
-      pinData: { n1: [{ json: { test: true } }] },
-    });
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "scope-single-1",
+      "v1",
+      {
+        mode: "partial",
+        fromNodeId: "n2",
+        nodeScope: "single",
+        pinData: { n1: [{ json: { test: true } }] },
+      },
+    );
     expect(run.status).toBe("success");
     expect(run.nodeExecutions.length).toBe(1);
     expect(run.nodeExecutions[0].nodeId).toBe("n2");
@@ -201,11 +267,16 @@ describe("M10 — Hardening & E2E", () => {
   });
 
   test("nodeScope 'to' executes upstream + target, not downstream", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-to-1", "v1", {
-      mode: "partial",
-      fromNodeId: "n4",
-      nodeScope: "to",
-    });
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "scope-to-1",
+      "v1",
+      {
+        mode: "partial",
+        fromNodeId: "n4",
+        nodeScope: "to",
+      },
+    );
     expect(run.status).toBe("success");
     const executedIds = run.nodeExecutions.map((ne) => ne.nodeId);
     expect(executedIds).toContain("n1");
@@ -215,11 +286,17 @@ describe("M10 — Hardening & E2E", () => {
   });
 
   test("nodeScope 'from' (default) executes from node onward", async () => {
-    const run = await engine.execute(MIXED_EXEC_DEFINITION, "scope-from-1", "v1", {
-      mode: "partial",
-      fromNodeId: "n4",
-      nodeScope: "from",
-    });
+    const run = await engine.execute(
+      MIXED_EXEC_DEFINITION,
+      "scope-from-1",
+      "v1",
+      {
+        mode: "partial",
+        fromNodeId: "n4",
+        nodeScope: "from",
+        inputData: [{ json: { stdout: "hello" } }],
+      },
+    );
     expect(run.status).toBe("success");
     const executedIds = run.nodeExecutions.map((ne) => ne.nodeId);
     expect(executedIds).toContain("n4");
@@ -231,21 +308,42 @@ describe("M10 — Hardening & E2E", () => {
     const failingDefinition: AutomationDefinition = {
       schemaVersion: 1,
       name: "Failing Test",
-      settings: { runTimeoutSec: 3600, savePayloads: true, errorAutomationId: null },
+      settings: {
+        runTimeoutSec: 3600,
+        savePayloads: true,
+        errorAutomationId: null,
+      },
       nodes: [
         {
-          id: "n1", type: "trigger.manual", typeVersion: 1, name: "Start",
-          target: { kind: "local" }, params: {}, disabled: false, position: { x: 0, y: 0 },
+          id: "n1",
+          type: "trigger.manual",
+          typeVersion: 1,
+          name: "Start",
+          target: { kind: "local" },
+          params: {},
+          disabled: false,
+          position: { x: 0, y: 0 },
         },
         {
-          id: "n2", type: "error.throw", typeVersion: 1, name: "Fail",
-          target: { kind: "local" }, params: { message: "intentional error" },
+          id: "n2",
+          type: "error.throw",
+          typeVersion: 1,
+          name: "Fail",
+          target: { kind: "local" },
+          params: { message: "intentional error" },
           retry: { attempts: 1, backoffSec: [0] },
-          disabled: false, position: { x: 200, y: 0 },
+          disabled: false,
+          position: { x: 200, y: 0 },
         },
       ],
       edges: [
-        { id: "e1", source: "n1", sourcePort: "out", target: "n2", targetPort: "in" },
+        {
+          id: "e1",
+          source: "n1",
+          sourcePort: "out",
+          target: "n2",
+          targetPort: "in",
+        },
       ],
     };
 

@@ -1,4 +1,9 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
 import { createExpressionEvaluator } from "../core/expressions.js";
 import type { ExpressionContext } from "../core/expression-contract.js";
@@ -44,7 +49,7 @@ const definition: NodeDefinition<SwitchParams> = {
         items: ctx.items,
         node: { id: ctx.nodeId, name: ctx.nodeName },
         env: ctx.env,
-        state: {},
+        state: ctx.stateSnapshot ?? {},
         now: ctx.now,
       };
 

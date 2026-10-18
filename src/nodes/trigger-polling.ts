@@ -1,6 +1,13 @@
-import type { NodeDefinition, RunContext, SimulationReport, NodeItem } from "../core/node-contract.js";
+import { executionSignal } from "../core/cancellation.js";
+import { createHash } from "node:crypto";
+import type {
+  NodeDefinition,
+  RunContext,
+  SimulationReport,
+  NodeItem,
+} from "../core/node-contract.js";
 import { nodeRegistry } from "../core/node-registry.js";
-import { safeSpawn } from "../core/safe-spawn.js";
+import { spawnAndCapture } from "../core/safe-spawn.js";
 
 interface PollingParams {
   intervalSec: number;
@@ -9,9 +16,15 @@ interface PollingParams {
   stopAfter: number;
 }
 
-async function executePoll(targetType: string, target: string): Promise<Record<string, unknown>> {
+async function executePoll(
+  targetType: string,
+  target: string,
+  env?: Record<string, string>,
+): Promise<Record<string, unknown>> {
   if (targetType === "url") {
-    const response = await fetch(target);
+    const response = await fetch(target, {
+      signal: executionSignal.getStore(),
+    });
     const body = await response.text();
     return {
       status: response.status,
@@ -21,10 +34,10 @@ async function executePoll(targetType: string, target: string): Promise<Record<s
   }
 
   if (targetType === "command") {
-    const proc = await safeSpawn({ cmd: target.split(/\s+/) });
-    const exitCode = await proc.exited;
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    const { exitCode, stdout, stderr } = await spawnAndCapture({
+      cmd: ["/bin/bash", "-c", target],
+      env,
+    });
     return {
       exitCode,
       stdout,
@@ -36,13 +49,8 @@ async function executePoll(targetType: string, target: string): Promise<Record<s
 }
 
 function hashResult(result: Record<string, unknown>): string {
-  const json = JSON.stringify(result);
-  let hash = 0;
-  for (let i = 0; i < json.length; i++) {
-    const ch = json.charCodeAt(i);
-    hash = ((hash << 5) - hash + ch) | 0;
-  }
-  return hash.toString(16);
+  const { headers, ...stable } = result;
+  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
 
 const definition: NodeDefinition<PollingParams> = {
@@ -61,9 +69,17 @@ const definition: NodeDefinition<PollingParams> = {
   },
 
   async run(ctx: RunContext<PollingParams>): Promise<NodeItem[]> {
-    const result = await executePoll(ctx.params.targetType, ctx.params.target);
+    const cursor = `polling:${ctx.nodeId}`;
+    const count = Number(ctx.state.get(`${cursor}:count`) ?? 0);
+    if (ctx.params.stopAfter > 0 && count >= ctx.params.stopAfter) return [];
+    ctx.state.set(`${cursor}:count`, count + 1);
+    const result = await executePoll(
+      ctx.params.targetType,
+      ctx.params.target,
+      ctx.env,
+    );
     const resultHash = hashResult(result);
-    const lastHash = ctx.state.get("polling:lastHash");
+    const lastHash = ctx.state.get(`${cursor}:hash`);
 
     const items: NodeItem[] = [
       {
@@ -77,7 +93,8 @@ const definition: NodeDefinition<PollingParams> = {
       },
     ];
 
-    ctx.state.set("polling:lastHash", resultHash);
+    ctx.state.set(`${cursor}:hash`, resultHash);
+    if (lastHash === resultHash) return [];
     return items;
   },
 
